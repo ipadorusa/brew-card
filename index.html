@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f7f3ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14100d" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="브루 카드">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>브루 카드</title>
+<style>
+:root{--bg:#f7f3ee;--fg:#1d1611;--mut:#5b4f45;--card:#fff;--line:#e2d8cd;--acc:#8a3b12;--hi:#fbe3cf;--cbg:#dbe7ff;--cfg:#133a7a;--obg:#d6f0dc;--ofg:#0e4d22;--btn:#5a3418;--btnfg:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#14100d;--fg:#f3ece4;--mut:#bcaea0;--card:#1f1915;--line:#3a302a;--acc:#ffad7a;--hi:#3e2918;--cbg:#1d2c4a;--cfg:#c2d6ff;--obg:#173a22;--ofg:#aee8bd;--btn:#e8b48a;--btnfg:#1d1611}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.45 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);word-break:keep-all;overflow-wrap:anywhere}
+main{max-width:560px;margin:0 auto;padding:14px 16px 40px}
+h1{font-size:22px;line-height:1.25;margin:4px 0 2px}
+.sub{color:var(--mut);margin:0 0 12px;font-size:16px}
+.spec{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:0 0 14px}
+.dose{grid-row:span 2;font-size:46px;font-weight:800;line-height:1;padding-right:12px;border-right:1px solid var(--line);text-align:center}
+.dose small{display:block;font-size:13px;font-weight:600;color:var(--mut);margin-top:4px}
+.spec p{margin:0;font-size:16px}
+.spec .grind{font-weight:700}.spec .grind span{display:inline-block}
+.spec .row{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:16px;border-top:1px solid var(--line);padding-top:8px}
+.spec .row b{font-weight:700}
+.hint{color:var(--mut);font-size:14px;margin:0 0 6px}
+.steps{list-style:none;padding:0;margin:0}
+.steps li{margin:0 0 8px}
+.step{display:grid;grid-template-columns:minmax(4.6em,auto) 1fr auto;grid-template-areas:"tm act g" "vb act g";gap:2px 10px;align-items:center;width:100%;text-align:left;font:inherit;color:var(--fg);background:var(--card);border:2px solid var(--line);border-radius:14px;padding:12px;min-height:72px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
+.step .tm{grid-area:tm;white-space:nowrap;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.step .vb{grid-area:vb;justify-self:start}
+.step .act{grid-area:act;font-size:19px;font-weight:600;line-height:1.3}
+.step .g{grid-area:g;text-align:right;font-size:34px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.step .g small{display:block;font-size:13px;font-weight:600;color:var(--mut);margin-top:3px}
+.step.cur{background:var(--hi);border-color:var(--acc)}
+.step.cur .g{color:var(--acc)}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:13px;font-weight:700}
+.badge.c{background:var(--cbg);color:var(--cfg)}
+.badge.o{background:var(--obg);color:var(--ofg)}
+.tt{margin:14px 0 0;font-weight:800;font-size:19px}
+.adj{margin:8px 0 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px}
+.adj:empty{display:none}
+.tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:18px 0 0;flex-wrap:wrap}
+.tbtn{font:inherit;font-size:15px;font-weight:700;min-height:48px;padding:8px 16px;border-radius:12px;border:2px solid var(--btn);background:transparent;color:var(--fg);touch-action:manipulation}
+.tbtn[aria-pressed=true]{background:var(--btn);color:var(--btnfg)}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.note{font-size:14px;color:var(--mut);margin:6px 0 0}
+a{color:var(--acc)}
+.list{list-style:none;padding:0;margin:12px 0}
+.list a{display:block;text-decoration:none;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px;min-height:60px}
+.list b{display:block;font-size:18px}
+.list span{color:var(--mut);font-size:15px}
+.empty{text-align:center;padding:48px 8px}
+.empty .big{font-size:24px;font-weight:800;margin:12px 0 6px}
+.empty p{color:var(--mut);margin:4px 0}
+.err .big{color:var(--acc)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none!important}
+@media (max-width:360px){.dose{font-size:38px}.step .g{font-size:28px}.step .act{font-size:17px}}
+</style>
+</head>
+<body>
+<main>
+  <section id="home" hidden>
+    <div class="empty" id="homeEmpty" hidden>
+      <div aria-hidden="true" style="font-size:48px">☕</div>
+      <p class="big">QR을 스캔해 주세요</p>
+      <p>레시피 QR을 카메라로 비추면 여기서 브루 카드가 열려요.</p>
+    </div>
+    <div id="homeList" hidden>
+      <h1>최근 카드</h1>
+      <p class="sub">눌러서 다시 열어요. 새 레시피는 QR을 스캔해 주세요.</p>
+      <ul class="list" id="recent"></ul>
+      <p style="text-align:center"><button type="button" class="tbtn" id="bClear">목록 지우기</button></p>
+    </div>
+  </section>
+
+  <section id="err" class="empty err" hidden>
+    <div aria-hidden="true" style="font-size:48px">😥</div>
+    <p class="big">카드를 열 수 없어요</p>
+    <p id="errMsg"></p>
+    <p><a href="#" class="home">최근 카드 보기</a></p>
+  </section>
+
+  <section id="card" hidden>
+    <h1 id="hTitle"></h1>
+    <p class="sub" id="hSub"></p>
+    <div class="spec" id="spec"></div>
+    <p class="hint">지금 하는 단계를 눌러 표시해요. 다시 누르면 다음 단계로 넘어가요.</p>
+    <ol class="steps" id="steps" aria-label="추출 단계"></ol>
+    <p class="tt" id="tt"></p>
+    <p class="adj" id="adj"></p>
+    <div class="tools">
+      <button type="button" class="tbtn" id="bWake" aria-pressed="false" hidden>화면 켜두기</button>
+      <a href="#" class="home">최근 카드 보기</a>
+    </div>
+    <p class="note" id="note" hidden></p>
+    <p class="sr" id="live" aria-live="polite"></p>
+  </section>
+</main>
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const KEY = 'brewcard.recent';
+const MAX_RECENT = 10;
+
+// ---------- 디코드 (FORMAT.md v1) ----------
+function b64urlBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+async function decodePayload(p) {
+  const stream = new Blob([b64urlBytes(p)]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return JSON.parse(await new Response(stream).text());
+}
+const num = (v) => typeof v === 'number' && isFinite(v);
+const str = (v) => (v == null ? '' : String(v));
+function normalize(o) {
+  if (!o || typeof o !== 'object' || !Array.isArray(o.s) || !o.s.length) throw new Error('bad');
+  const steps = o.s.map((s) => {
+    if (!Array.isArray(s)) throw new Error('bad step');
+    return { label: str(s[0]).trim(), valve: s[1] === 0 || s[1] === 1 ? s[1] : null, g: num(s[2]) ? s[2] : null, act: str(s[3]) };
+  });
+  return { o, steps };
+}
+
+// ---------- 표기 ----------
+const r1 = (x) => String(Math.round(x * 10) / 10);
+function grindText(c) {
+  const a = Array.isArray(c) ? c : [c, c];
+  if (!num(a[0]) || !num(a[1])) return '';
+  const f = (fn) => (a[0] === a[1] ? fn(a[0]) : fn(a[0]) + '~' + fn(a[1]));
+  return `코만단테 ${f(String)}클릭 ≈ ${f((x) => r1(x * 30))}µm (K-Ultra ${f((x) => r1(x / 4 + 1))} / EK43 ${f((x) => r1(x / 4 + 3))})`;
+}
+function waterText(o) {
+  const parts = [];
+  if (num(o.w)) parts.push((num(o.i) || o.t === 'ICE' ? '뜨거운 물 ' : '물 ') + o.w + 'g');
+  if (num(o.i)) parts.push('얼음 ' + o.i + 'g');
+  if (num(o.p)) parts.push('바이패스 ' + o.p + 'g');
+  return parts.join(' + ');
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+const join = (a, sep) => a.filter(Boolean).join(sep);
+
+// ---------- 최근 카드 ----------
+function loadRecent() { try { const a = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function saveRecent(h, o) {
+  try {
+    const list = loadRecent().filter((x) => x && x.h !== h);
+    list.unshift({ h, b: str(o.b), r: str(o.r), d: str(o.d), t: str(o.t), ts: Date.now() });
+    localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
+  } catch (e) { /* 저장 불가(사생활 보호 모드 등) */ }
+}
+
+// ---------- 화면 ----------
+let card = null, cur = -1, routeToken = 0;
+function show(id) { for (const s of ['home', 'err', 'card']) $(s).hidden = s !== id; window.scrollTo(0, 0); }
+
+async function route() {
+  const token = ++routeToken;
+  const h = location.hash.replace(/^#/, '').replace(/\s+/g, '');
+  if (!h) { card = null; renderHome(); return; }
+  const dot = h.indexOf('.');
+  const ver = dot > 0 ? h.slice(0, dot) : '';
+  if (ver !== '1') {
+    return showErr(/^\d+$/.test(ver)
+      ? `이 카드는 새 형식(v${ver})이라 지금 화면에서는 열 수 없어요. 인터넷에 연결된 상태에서 잠시 뒤 다시 열어 주세요.`
+      : '주소 형식이 맞지 않아요. QR을 다시 스캔해 주세요.');
+  }
+  if (typeof DecompressionStream === 'undefined') {
+    return showErr('이 브라우저는 카드를 풀 수 없어요. iOS 17 이상의 Safari나 최신 브라우저에서 열어 주세요.');
+  }
+  let c;
+  try { c = normalize(await decodePayload(h.slice(dot + 1))); }
+  catch (e) { if (token === routeToken) showErr('카드를 읽지 못했어요. 주소가 잘렸을 수 있어요. QR을 다시 스캔해 주세요.'); return; }
+  if (token !== routeToken) return;
+  saveRecent(h, c.o);
+  openCard(c);
+}
+function showErr(msg) { card = null; $('errMsg').textContent = msg; document.title = '브루 카드'; show('err'); }
+
+function renderHome() {
+  document.title = '브루 카드';
+  const list = loadRecent(), ul = $('recent');
+  ul.textContent = '';
+  for (const x of list) {
+    const li = el('li'), a = el('a');
+    a.href = '#' + x.h;
+    a.append(el('b', null, join([x.b, x.r], ' · ') || '이름 없는 카드'), el('span', null, join([x.d, x.t], ' · ')));
+    li.append(a); ul.append(li);
+  }
+  $('homeEmpty').hidden = list.length > 0;
+  $('homeList').hidden = list.length === 0;
+  show('home');
+}
+
+function openCard(c) {
+  card = c; cur = -1;
+  const o = c.o;
+  document.title = join([o.b, join([o.d, o.t], ' ')], ' · ') || '브루 카드';
+  $('hTitle').textContent = join([o.b, o.r], ' · ');
+  $('hSub').textContent = join([o.d, o.t], ' · ') + (o.id ? `  (레시피 ${o.id})` : '');
+
+  const spec = $('spec'); spec.textContent = '';
+  const dose = el('div', 'dose', num(o.g) ? o.g + 'g' : '—'); dose.append(el('small', null, '원두'));
+  const gp = el('p', 'grind');
+  const gt = (o.c != null && grindText(o.c)) || '분쇄 정보 없음', cut = gt.indexOf(' (');
+  if (cut > 0) gp.append(el('span', null, gt.slice(0, cut)), ' ', el('span', null, gt.slice(cut + 1))); else gp.textContent = gt;
+  spec.append(dose, gp,
+    el('p', null, join([num(o.T) ? o.T + '℃' : '', o.ra ? '비율 ' + o.ra : ''], ' · ')));
+  const row = el('div', 'row'), wt = waterText(o);
+  if (wt) { const s = el('span'); s.append(el('b', null, wt)); row.append(s); }
+  if (o.f) row.append(el('span', null, '필터 ' + o.f));
+  if (row.childNodes.length) spec.append(row);
+
+  const ol = $('steps'); ol.textContent = '';
+  let prev = 0;
+  c.steps.forEach((s, k) => {
+    const li = el('li'), b = el('button', 'step');
+    b.type = 'button'; b.dataset.k = k;
+    b.append(el('span', 'tm', s.label || '—'));
+    if (s.valve != null) b.append(el('span', 'badge vb ' + (s.valve ? 'o' : 'c'), s.valve ? '열림' : '닫힘'));
+    b.append(el('span', 'act', s.act));
+    const g = el('span', 'g', s.g == null ? '' : s.g + 'g');
+    if (s.g != null && prev != null && s.g > prev && k > 0) g.append(el('small', null, '+' + (s.g - prev) + 'g'));
+    b.append(g);
+    b.setAttribute('aria-label', join([s.label, s.valve === 0 ? '밸브 닫힘' : s.valve === 1 ? '밸브 열림' : '', s.g != null ? '누적 ' + s.g + 'g' : '', s.act], ', '));
+    li.append(b); ol.append(li);
+    prev = s.g;
+  });
+  $('tt').textContent = o.tt ? '총 시간 ' + o.tt : '';
+  $('tt').hidden = !o.tt;
+  $('adj').textContent = o.a ? '첫 잔 후 조정: ' + o.a : '';
+  $('live').textContent = '';
+  show('card');
+  mark(-1);
+}
+
+// 단계 표시: 다른 단계를 누르면 그 단계로, 지금 단계를 다시 누르면 다음 단계로 (마지막이면 해제)
+function mark(k) {
+  cur = k;
+  document.querySelectorAll('#steps .step').forEach((b, i) => {
+    b.classList.toggle('cur', i === cur);
+    if (i === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+  });
+  const s = card && card.steps[cur];
+  $('live').textContent = s ? `${cur + 1}단계: ${join([s.label, s.g != null ? s.g + 'g' : '', s.act], ', ')}` : '';
+}
+$('steps').addEventListener('click', (e) => {
+  const b = e.target.closest('.step');
+  if (!b || !card) return;
+  const k = +b.dataset.k;
+  if (k !== cur) mark(k);
+  else {
+    const n = k + 1 < card.steps.length ? k + 1 : -1;
+    mark(n);
+    if (n >= 0) document.querySelectorAll('#steps .step')[n].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+});
+
+// ---------- 화면 켜두기 (선택) ----------
+let wl = null, wantWake = false;
+function note(msg) { const n = $('note'); n.textContent = msg; n.hidden = !msg; }
+async function wake() {
+  try {
+    if (!wl || wl.released) wl = await navigator.wakeLock.request('screen');
+    if (!wantWake) { releaseWake(); return; }
+    note('');
+  } catch (e) { note('화면 켜두기를 켜지 못했어요. 저전력 모드라면 꺼 주세요.'); }
+}
+function releaseWake() { const w = wl; wl = null; if (w && !w.released) w.release().catch(() => {}); }
+if ('wakeLock' in navigator) {
+  const bw = $('bWake');
+  bw.hidden = false;
+  bw.addEventListener('click', () => {
+    wantWake = !wantWake;
+    bw.setAttribute('aria-pressed', String(wantWake));
+    if (wantWake) wake(); else { releaseWake(); note(''); }
+  });
+  document.addEventListener('visibilitychange', () => { if (wantWake && document.visibilityState === 'visible') wake(); });
+}
+
+// ---------- 연결 ----------
+$('bClear').addEventListener('click', () => { try { localStorage.removeItem(KEY); } catch (e) {} renderHome(); });
+document.querySelectorAll('a.home').forEach((a) => a.addEventListener('click', (e) => {
+  e.preventDefault(); history.pushState(null, '', location.pathname + location.search); route();
+}));
+window.addEventListener('hashchange', route);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+route();
+})();
+</script>
+</body>
+</html>
