@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f7f3ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14100d" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="원두 노트">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<link rel="manifest" href="library.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>원두 노트</title>
+<style>
+:root{--bg:#f7f3ee;--fg:#1d1611;--mut:#5b4f45;--card:#fff;--line:#e2d8cd;--acc:#8a3b12;--hi:#fbe3cf;--cbg:#dbe7ff;--cfg:#133a7a;--obg:#d6f0dc;--ofg:#0e4d22;--btn:#5a3418;--btnfg:#fff;--code:#f1ebe4}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14100d;--fg:#f3ece4;--mut:#bcaea0;--card:#1f1915;--line:#3a302a;--acc:#ffad7a;--hi:#3e2918;--cbg:#1d2c4a;--cfg:#c2d6ff;--obg:#173a22;--ofg:#aee8bd;--btn:#e8b48a;--btnfg:#1d1611;--code:#2a221d}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);word-break:keep-all;overflow-wrap:anywhere}
+main{max-width:720px;margin:0 auto;padding:12px 16px 48px}
+a{color:var(--acc)}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+[hidden]{display:none!important}
+header{display:flex;align-items:center;gap:10px;margin:2px 0 10px}
+header h1{font-size:22px;margin:0;flex:1}
+header h1 a{color:inherit;text-decoration:none}
+.iconbtn{font:inherit;font-size:20px;line-height:1;min-width:44px;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);touch-action:manipulation}
+.status{color:var(--mut);font-size:13px;margin:-6px 0 10px}
+.status.warn{color:var(--acc);font-weight:600}
+nav.tabs{display:flex;gap:6px;margin:0 0 14px;border-bottom:1px solid var(--line)}
+nav.tabs a{flex:1;text-align:center;text-decoration:none;color:var(--mut);font-weight:700;padding:10px 4px;border-bottom:3px solid transparent;min-height:44px}
+nav.tabs a[aria-current=page]{color:var(--fg);border-bottom-color:var(--acc)}
+.search{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);margin:0 0 12px}
+.cards{list-style:none;padding:0;margin:0}
+.cards>li{margin:0 0 10px}
+.bean{display:block;text-decoration:none;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.bean .ro{color:var(--mut);font-size:14px;font-weight:600}
+.bean .nm{display:block;font-size:17px;font-weight:800;line-height:1.35;margin:1px 0 4px}
+.bean .meta{color:var(--mut);font-size:14px;margin:0}
+.bean .foot{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:space-between;font-size:13px;color:var(--mut);margin-top:6px}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:700;background:var(--hi);color:var(--fg)}
+.badge.ice{background:var(--cbg);color:var(--cfg)}
+.badge.hot{background:var(--hi);color:var(--acc)}
+.badge.ok{background:var(--obg);color:var(--ofg)}
+.empty{text-align:center;color:var(--mut);padding:40px 8px}
+.empty b{display:block;color:var(--fg);font-size:19px;margin:8px 0 4px}
+.back{display:inline-block;margin:0 0 8px;text-decoration:none;font-weight:700;min-height:32px}
+.qcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin:0 0 16px}
+.qcard{display:grid;grid-template-columns:auto 1fr;gap:0 10px;align-items:center;text-align:left;font:inherit;color:var(--fg);background:var(--card);border:2px solid var(--line);border-radius:14px;padding:10px 12px;min-height:64px;cursor:pointer;touch-action:manipulation}
+.qcard:active{border-color:var(--acc)}
+.qcard .g{grid-row:span 2;font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.qcard .t{font-weight:700;font-size:15px}
+.qcard .s{color:var(--mut);font-size:13px}
+.qhead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 0 8px}
+.qhead h2{font-size:17px;margin:0}
+.qhead span{color:var(--mut);font-size:13px}
+.doc h1{font-size:21px;line-height:1.3;margin:4px 0 8px}
+.doc h2{font-size:18px;margin:0}
+.doc h3{font-size:16px;margin:18px 0 6px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.doc h4{font-size:15px;margin:14px 0 4px}
+.doc p,.doc li{font-size:15px}
+.doc blockquote{margin:8px 0;padding:6px 12px;border-left:3px solid var(--line);color:var(--mut)}
+.doc blockquote p{margin:4px 0}
+.doc hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.doc code{background:var(--code);border-radius:5px;padding:0 4px;font-size:.92em}
+.doc pre{background:var(--code);border-radius:10px;padding:10px;overflow-x:auto;font-size:13px}
+.doc pre code{background:none;padding:0}
+.doc ul,.doc ol{padding-left:20px;margin:6px 0}
+.tw{overflow-x:auto;margin:8px 0;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.tw table{border-collapse:collapse;font-size:14px;min-width:100%}
+.tw th,.tw td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.tw th{background:var(--code);white-space:nowrap}
+.tw tr:last-child td{border-bottom:0}
+details.sec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0 12px;margin:0 0 10px}
+details.sec>summary{cursor:pointer;padding:12px 0;list-style:none;display:flex;align-items:center;gap:8px}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::before{content:"▸";color:var(--mut);transition:transform .15s}
+details.sec[open]>summary::before{transform:rotate(90deg)}
+details.sec[open]{padding-bottom:10px}
+.cardbtn{font:inherit;font-size:13px;font-weight:700;border-radius:999px;border:1.5px solid var(--btn);background:transparent;color:var(--fg);padding:2px 10px;min-height:30px;cursor:pointer}
+.form label{display:block;font-weight:700;margin:14px 0 4px}
+.form input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.form .help{color:var(--mut);font-size:14px;margin:4px 0 0}
+.btn{font:inherit;font-weight:700;min-height:46px;padding:8px 18px;border-radius:12px;border:2px solid var(--btn);background:var(--btn);color:var(--btnfg);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--fg)}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 0}
+.steps{padding-left:22px}
+.steps li{margin:4px 0}
+.msg{border-radius:12px;padding:10px 12px;margin:12px 0;background:var(--hi)}
+.msg.ok{background:var(--obg);color:var(--ofg)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><a href="#/">원두 노트</a></h1>
+    <button type="button" class="iconbtn" id="bSync" aria-label="GitHub에서 새로 받기" title="새로 받기">↻</button>
+    <a class="iconbtn" href="#/settings" aria-label="설정" title="설정" style="display:grid;place-items:center;text-decoration:none">⚙</a>
+  </header>
+  <p class="status" id="status" aria-live="polite"></p>
+  <nav class="tabs" id="tabs">
+    <a href="#/" data-tab="beans">원두</a>
+    <a href="#/wish" data-tab="wish">구매 후보</a>
+    <a href="#/docs" data-tab="docs">가이드</a>
+  </nav>
+  <div id="view"></div>
+</main>
+<script type="module" src="library.js"></script>
+</body>
+</html>
