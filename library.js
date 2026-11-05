@@ -2,7 +2,7 @@
 // 이 파일과 페이지는 공개 저장소에 올라가지만 내용은 없다. 내용은 이 기기에 저장한 읽기 전용 토큰으로만 읽는다.
 // 개발용: library.html?local=../ 이면 GitHub 대신 같은 서버의 ../beans/, ../recipes/를 읽는다.
 
-import { tablesIn, parseBeanText } from './brew-core.js';
+import { tablesIn, splitRow, clean, parseBeanText } from './brew-core.js';
 
 const KEY = 'coffee-lib:';
 const DEFAULT_REPO = 'ipadorusa/my-coffe-recipe';
@@ -317,6 +317,40 @@ async function openCard(obj) {
 
 const grind = (c) => `C${Array.isArray(c) ? c.join('~') : c}`;
 
+// ---------- 로스팅 후 경과일 (recipes/blends-and-bean-guide.md 5-2표 구간) ----------
+
+const AGE_GUIDE = 'recipes/blends-and-bean-guide.md';
+const AGE_STAGES = [
+  [2, '0~2일', '가스가 가장 많아요. 2~3일 더 기다리면 좋아요'],
+  [7, '3~7일', '미디엄·다크 적기. 라이트는 뜸을 40~45초로 길게'],
+  [14, '8~14일', '라이트 적기. 레시피 그대로'],
+  [21, '15~21일', '뜸 25~30초, 온도 +1℃, 1~2클릭 가늘게'],
+  [30, '22~30일', '윗향이 꺾여요. 온도 +1~2℃, 2클릭 가늘게'],
+  [Infinity, '31일 이상', '산화가 진행돼요. 온도 +2℃, 가늘게, 원두 +1~2g'],
+];
+
+// 원두 파일의 '로스팅일' 칸이 YYYY-MM-DD로 시작할 때만 계산한다. 미확인이면 null.
+function roastAge(text) {
+  const row = text.split(/\r?\n/).map(splitRow).find((c) => c && c[0] === '로스팅일');
+  const m = row && /^(\d{4})-(\d{2})-(\d{2})/.exec(row[1] || '');
+  if (!m) return null;
+  const now = new Date();
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(+m[1], m[2] - 1, +m[3])) / 86400000);
+  if (!(days >= 0)) return null;
+  const [, range, tip] = AGE_STAGES.find(([max]) => days <= max);
+  return { date: m[0], days, range, tip, guess: /추정/.test(row[1]) };
+}
+
+const ageBadge = (a) => `<span class="badge">로스팅 후 ${a.days}일${a.guess ? ' (추정)' : ''}</span>`;
+
+// 파일 버전(sha)마다 한 번만 읽는다. 받아 둔 파일은 이 기기 저장소에서 바로 나온다.
+const ages = new Map();
+function ageOf(file) {
+  const k = `${file}@${state.tree?.files.find((f) => f.path === `beans/${file}`)?.sha || ''}`;
+  if (!ages.has(k)) ages.set(k, readFile(`beans/${file}`).then(roastAge, () => null));
+  return ages.get(k);
+}
+
 // ---------- 화면 ----------
 
 function setTab(tab) {
@@ -378,10 +412,13 @@ async function showBeans() {
         <span class="ro">${esc(plain(r['로스터리'] || ''))}</span>
         <span class="nm">${esc(plain(r['원두'] || ''))}</span>
         ${meta ? `<p class="meta">${esc(meta)}</p>` : ''}
-        ${r['로스팅'] ? `<p class="meta">로스팅 ${esc(plain(r['로스팅']))}</p>` : ''}
+        ${r['로스팅'] ? `<p class="meta">로스팅 ${esc(plain(r['로스팅']))} <span class="age" data-file="${esc(file || '')}"></span></p>` : `<p class="meta age" data-file="${esc(file || '')}"></p>`}
         <span class="foot"><span>${esc(plain(r['드리퍼 · 음료'] || ''))}</span><span>${star} ${esc(r['갱신일'] || '')}</span></span>
       </a></li>`;
     }).join('') : `<li>${empty('찾는 원두가 없어요', '다른 말로 찾아 보세요.')}</li>`;
+    for (const s of list.querySelectorAll('.age[data-file]')) {
+      if (s.dataset.file) ageOf(s.dataset.file).then((a) => { if (a) s.innerHTML = ageBadge(a); });
+    }
   };
   $('q').addEventListener('input', draw);
   draw();
@@ -396,14 +433,16 @@ async function showBean(name) {
   try { text = await readFile(path); } catch (e) { view.innerHTML = `<a class="back" href="#/">← 원두</a>${empty('원두 파일을 못 읽었어요', esc(errText(e)))}`; return; }
   const bean = parseBeanText(text);
   const byId = new Map(bean.recipes.map((r) => [r.id, r]));
-  const quick = bean.recipes.length ? `
+  const age = roastAge(text);
+  const ageMsg = age ? `<p class="msg"><b>로스팅 후 ${age.days}일${age.guess ? ' (추정)' : ''}</b> · 로스팅일 ${esc(age.date)} · ${esc(age.range)}: ${esc(age.tip)}. ${aTag({ url: `#/doc/${encodeURIComponent(AGE_GUIDE)}` }, '경과일별 조정표')}</p>` : '';
+  const quick = ageMsg + (bean.recipes.length ? `
     <div class="qhead"><h2>브루 카드</h2><span>눌러서 폰용 카드로 열어요</span></div>
     <div class="qcards">${bean.recipes.map((r) => `
       <button type="button" class="qcard" data-id="${esc(r.id)}">
         <span class="g">${esc(String(r.g))}g</span>
         <span class="t">${esc(r.d)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
         <span class="s">${esc(r.id)} · ${esc(grind(r.c))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
-      </button>`).join('')}</div>` : '';
+      </button>`).join('')}</div>` : '');
   view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(text, 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
   for (const b of view.querySelectorAll('.qcard')) b.addEventListener('click', () => openCard(byId.get(b.dataset.id)));
   for (const h of view.querySelectorAll('.doc h3')) {
@@ -452,8 +491,16 @@ function showDocs() {
   const order = Object.keys(DOC_NAMES);
   docs.sort((a, b) => ((order.indexOf(a.path) + 1) || 99) - ((order.indexOf(b.path) + 1) || 99) || a.path.localeCompare(b.path));
   view.innerHTML = `<ul class="cards">${docs.map((f) => `<li><a class="bean" href="#/doc/${encodeURIComponent(f.path)}">
-    <span class="nm">${esc(DOC_NAMES[f.path] || f.path.replace(/^.*\//, '').replace(/\.md$/, ''))}</span>
+    <span class="nm" data-path="${esc(f.path)}">${esc(DOC_NAMES[f.path] || f.path.replace(/^.*\//, '').replace(/\.md$/, ''))}</span>
     <p class="meta">${esc(f.path)}</p></a></li>`).join('')}</ul>`;
+  // DOC_NAMES에 없는 문서는 첫 제목(# …)을 이름으로 쓴다. 못 읽으면 파일 이름 그대로 둔다.
+  for (const s of view.querySelectorAll('.nm[data-path]')) {
+    if (DOC_NAMES[s.dataset.path]) continue;
+    readFile(s.dataset.path).then((text) => {
+      const h = /^#\s+(.+?)\s*#*\s*$/m.exec(text);
+      if (h) s.textContent = clean(h[1]);
+    }, () => {});
+  }
 }
 
 async function showDoc(path) {

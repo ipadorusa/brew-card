@@ -46,6 +46,13 @@ h1{font-size:22px;line-height:1.25;margin:4px 0 2px}
 .tt{margin:14px 0 0;font-weight:800;font-size:19px}
 .adj{margin:8px 0 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px}
 .adj:empty{display:none}
+.dose.chg{color:var(--acc)}
+.scale{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 14px}
+.scale .lbl{color:var(--mut);font-size:15px;margin-right:auto}
+.sbtn{font:inherit;font-size:22px;font-weight:800;line-height:1;min-width:48px;min-height:44px;border-radius:12px;border:2px solid var(--btn);background:transparent;color:var(--fg);touch-action:manipulation}
+.sbtn:disabled{opacity:.35}
+.scale output{min-width:3.2em;text-align:center;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.scale .tbtn{min-height:44px}
 .tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:18px 0 0;flex-wrap:wrap}
 .tbtn{font:inherit;font-size:15px;font-weight:700;min-height:48px;padding:8px 16px;border-radius:12px;border:2px solid var(--btn);background:transparent;color:var(--fg);touch-action:manipulation}
 .tbtn[aria-pressed=true]{background:var(--btn);color:var(--btnfg)}
@@ -93,6 +100,14 @@ a{color:var(--acc)}
     <h1 id="hTitle"></h1>
     <p class="sub" id="hSub"></p>
     <div class="spec" id="spec"></div>
+    <div class="scale" id="scale" hidden>
+      <span class="lbl">원두량 바꾸기</span>
+      <button type="button" class="sbtn" id="bMinus" aria-label="원두 1g 줄이기">−</button>
+      <output id="gOut"></output>
+      <button type="button" class="sbtn" id="bPlus" aria-label="원두 1g 늘리기">+</button>
+      <button type="button" class="tbtn" id="bReset" hidden>원래대로</button>
+    </div>
+    <p class="note" id="scaleNote" hidden></p>
     <p class="hint">지금 하는 단계를 눌러 표시해요. 다시 누르면 다음 단계로 넘어가요.</p>
     <ol class="steps" id="steps" aria-label="추출 단계"></ol>
     <p class="tt" id="tt"></p>
@@ -207,18 +222,76 @@ function renderHome() {
 }
 
 function openCard(c) {
-  card = c; cur = -1;
+  card = c; cur = -1; dose = c.o.g;
   const o = c.o;
   document.title = join([o.b, join([o.d, o.t], ' ')], ' · ') || '브루 카드';
   $('hTitle').textContent = join([o.b, o.r], ' · ');
   $('hSub').textContent = join([o.d, o.t], ' · ') + (o.id ? `  (레시피 ${o.id})` : '');
+  $('tt').textContent = o.tt ? '총 시간 ' + o.tt : '';
+  $('tt').hidden = !o.tt;
+  $('adj').textContent = o.a ? '첫 잔 후 조정: ' + o.a : '';
+  $('live').textContent = '';
+  draw();
+  show('card');
+  mark(-1);
+}
+
+// ---------- 원두량 바꾸기 (물·얼음·누적 g만 같은 비율로. 시각·분쇄·온도는 그대로) ----------
+const G_MIN = 8, G_MAX = 20;
+let dose = null, shown = null;
+function scaled(c, g) {
+  if (!num(c.o.g) || !num(g) || g === c.o.g) return c;
+  const k = g / c.o.g, sc = (v) => (num(v) ? Math.round(v * k) : v);
+  // 동작 문구 속 "+30g", "얼음 100g"도 같은 비율로 (안 바꾸면 오른쪽 누적 g와 어긋난다)
+  // 맨 앞 "+Ng"는 반올림한 누적 g의 차이로 맞춘다.
+  const act = (t) => t.replace(/(\d+(?:\.\d+)?)(\s*g)(?![a-zA-Z])/g, (m, n, u) => Math.round(n * k) + u);
+  let prev = 0;
+  const steps = c.steps.map((s) => {
+    const g2 = sc(s.g);
+    let a = act(s.act);
+    if (num(g2) && num(prev) && /^\+\d/.test(a)) a = a.replace(/^\+\d+(?:\.\d+)?/, '+' + (g2 - prev));
+    prev = g2;
+    return { ...s, g: g2, act: a };
+  });
+  return { o: { ...c.o, g, w: sc(c.o.w), i: sc(c.o.i), p: sc(c.o.p) }, steps };
+}
+function setDose(g) {
+  if (!card || !num(g) || g === dose) return;
+  dose = g;
+  const k = cur;
+  draw();
+  mark(k);
+  $('live').textContent = `원두 ${g}g 기준으로 바꿨어요.`;
+}
+// 14.5g 같은 원래 값에서도 정수 g으로 움직이고, 범위(8~20g, 원래 값이 밖이면 그 값까지)를 넘지 않는다.
+const gLo = () => Math.min(G_MIN, card.o.g), gHi = () => Math.max(G_MAX, card.o.g);
+$('bMinus').addEventListener('click', () => card && setDose(Math.max(gLo(), Math.ceil(dose) - 1)));
+$('bPlus').addEventListener('click', () => card && setDose(Math.min(gHi(), Math.floor(dose) + 1)));
+$('bReset').addEventListener('click', () => setDose(card && card.o.g));
+
+function draw() {
+  const c = shown = scaled(card, dose), o = c.o, g0 = card.o.g, changed = num(g0) && dose !== g0;
+  const sc = $('scale');
+  sc.hidden = !num(g0);
+  if (num(g0)) {
+    $('gOut').textContent = dose + 'g';
+    $('bMinus').disabled = dose <= gLo();
+    $('bPlus').disabled = dose >= gHi();
+    $('bReset').hidden = !changed;
+  }
+  const sn = $('scaleNote');
+  sn.hidden = !changed;
+  sn.textContent = changed
+    ? `원래 ${g0}g 레시피를 ${dose}g에 맞춰 물${num(o.i) ? '·얼음' : ''}을 비율대로 ${dose < g0 ? '줄였어요' : '늘렸어요'}. 시각·분쇄·온도는 그대로예요.`
+      + (Math.abs(dose - g0) >= 3 ? ' 3g 넘게 바꾸면 추출 시간이 달라질 수 있어요. 맛을 보고 분쇄를 1클릭씩 고쳐 주세요.' : '')
+    : '';
 
   const spec = $('spec'); spec.textContent = '';
-  const dose = el('div', 'dose', num(o.g) ? o.g + 'g' : '—'); dose.append(el('small', null, '원두'));
+  const doseEl = el('div', 'dose' + (changed ? ' chg' : ''), num(o.g) ? o.g + 'g' : '—'); doseEl.append(el('small', null, '원두'));
   const gp = el('p', 'grind');
   const gt = (o.c != null && grindText(o.c)) || '분쇄 정보 없음', cut = gt.indexOf(' (');
   if (cut > 0) gp.append(el('span', null, gt.slice(0, cut)), ' ', el('span', null, gt.slice(cut + 1))); else gp.textContent = gt;
-  spec.append(dose, gp,
+  spec.append(doseEl, gp,
     el('p', null, join([num(o.T) ? o.T + '℃' : '', o.ra ? '비율 ' + o.ra : ''], ' · ')));
   const row = el('div', 'row'), wt = waterText(o);
   if (wt) { const s = el('span'); s.append(el('b', null, wt)); row.append(s); }
@@ -240,12 +313,6 @@ function openCard(c) {
     li.append(b); ol.append(li);
     prev = s.g;
   });
-  $('tt').textContent = o.tt ? '총 시간 ' + o.tt : '';
-  $('tt').hidden = !o.tt;
-  $('adj').textContent = o.a ? '첫 잔 후 조정: ' + o.a : '';
-  $('live').textContent = '';
-  show('card');
-  mark(-1);
 }
 
 // 단계 표시: 다른 단계를 누르면 그 단계로, 지금 단계를 다시 누르면 다음 단계로 (마지막이면 해제)
@@ -255,7 +322,7 @@ function mark(k) {
     b.classList.toggle('cur', i === cur);
     if (i === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
   });
-  const s = card && card.steps[cur];
+  const s = shown && shown.steps[cur];
   $('live').textContent = s ? `${cur + 1}단계: ${join([s.label, s.g != null ? s.g + 'g' : '', s.act], ', ')}` : '';
 }
 $('steps').addEventListener('click', (e) => {

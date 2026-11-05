@@ -1,5 +1,5 @@
 // 브루 카드 서비스 워커: 앱 셸 cache-first. 파일을 바꾸면 VERSION을 올린다.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const PREFIX = 'brew-card-';
 const CACHE = PREFIX + VERSION;
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png',
