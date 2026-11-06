@@ -1,5 +1,6 @@
-// 브루 카드 서비스 워커: 앱 셸 cache-first. 파일을 바꾸면 VERSION을 올린다.
-const VERSION = 'v3';
+// 브루 카드 서비스 워커: 앱 셸 cache-first.
+// VERSION은 손으로 올리지 않는다. deploy-viewer.sh가 배포할 때 뷰어 파일 내용의 해시로 바꿔 넣는다.
+const VERSION = 'ac327925cd57';
 const PREFIX = 'brew-card-';
 const CACHE = PREFIX + VERSION;
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png',
@@ -22,6 +23,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  if (/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) return; // 로컬 확인 때는 늘 새 파일
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(req, { ignoreSearch: true });

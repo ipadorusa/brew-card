@@ -67,6 +67,28 @@ a{color:var(--acc)}
 .empty .big{font-size:24px;font-weight:800;margin:12px 0 6px}
 .empty p{color:var(--mut);margin:4px 0}
 .err .big{color:var(--acc)}
+.log{margin:18px 0 0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0 14px}
+.log>summary{cursor:pointer;font-weight:800;padding:12px 0;min-height:48px;display:flex;align-items:center;list-style:none}
+.log>summary::-webkit-details-marker{display:none}
+.log>summary::before{content:"▸";color:var(--mut);margin-right:8px;transition:transform .15s}
+.log[open]>summary::before{transform:rotate(90deg)}
+.log[open]{padding-bottom:14px}
+.log fieldset{border:0;padding:0;margin:12px 0 0}
+.log legend{font-weight:700;font-size:15px;padding:0;margin:0 0 6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips label{position:relative}
+.chips input{position:absolute;inset:0;margin:0;opacity:0}
+.chips span{display:inline-flex;align-items:center;min-height:42px;padding:6px 13px;border-radius:999px;border:2px solid var(--line);font-size:15px;font-weight:700}
+.chips input:checked+span{background:var(--btn);border-color:var(--btn);color:var(--btnfg)}
+.chips input:focus-visible+span{outline:3px solid var(--acc);outline-offset:2px}
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:12px 0 0}
+.fields label{font-size:14px;font-weight:700;color:var(--mut)}
+.fields .wide{grid-column:1/-1}
+.fields input,#logOut{display:block;width:100%;margin-top:4px;font:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+#logOut{margin-top:14px;font-size:15px;line-height:1.45;resize:vertical}
+.log .tools{margin:10px 0 0;justify-content:flex-start}
+.upd{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:536px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--fg);color:var(--bg);border-radius:14px;padding:8px 8px 8px 16px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.3);z-index:9}
+.upd button{font:inherit;font-weight:800;min-height:44px;padding:6px 14px;border-radius:10px;border:0;background:var(--bg);color:var(--fg)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 [hidden]{display:none!important}
 @media (max-width:360px){.dose{font-size:38px}.step .g{font-size:28px}.step .act{font-size:17px}}
@@ -112,6 +134,25 @@ a{color:var(--acc)}
     <ol class="steps" id="steps" aria-label="추출 단계"></ol>
     <p class="tt" id="tt"></p>
     <p class="adj" id="adj"></p>
+    <details class="log" id="log">
+      <summary>추출 기록 남기기</summary>
+      <p class="note">고른 내용이 아래 글로 만들어져요. 복사해서 Claude나 Aside 대화창에 붙여 넣으면 원두 파일에 기록돼요.</p>
+      <fieldset><legend>평가</legend><div class="chips" id="logStar"></div></fieldset>
+      <fieldset><legend>맛 (여러 개 골라도 돼요)</legend><div class="chips" id="logTaste"></div></fieldset>
+      <div class="fields">
+        <label>분쇄 (클릭)<input id="logC" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label>온도 (℃)<input id="logT" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label>총 시간<input id="logTime" type="text" inputmode="numeric" placeholder="예: 2:40" autocomplete="off"></label>
+        <label>로스팅일<input id="logRoast" type="date"></label>
+        <label class="wide">메모<input id="logMemo" type="text" placeholder="예: 단맛은 좋은데 끝이 짧아요" autocomplete="off"></label>
+      </div>
+      <textarea id="logOut" rows="7" readonly aria-label="만들어진 기록 글"></textarea>
+      <div class="tools">
+        <button type="button" class="tbtn" id="bCopy">복사</button>
+        <button type="button" class="tbtn" id="bShare" hidden>공유</button>
+      </div>
+      <p class="note" id="logMsg" aria-live="polite"></p>
+    </details>
     <div class="tools">
       <button type="button" class="tbtn" id="bWake" aria-pressed="false" hidden>화면 켜두기</button>
       <a href="#" class="home">최근 카드 보기</a>
@@ -120,6 +161,7 @@ a{color:var(--acc)}
     <p class="sr" id="live" aria-live="polite"></p>
   </section>
 </main>
+<div class="upd" id="upd" role="status" hidden><span>새 버전이 나왔어요</span><button type="button" id="bUpd">새로고침</button></div>
 <script>
 (() => {
 'use strict';
@@ -232,6 +274,7 @@ function openCard(c) {
   $('adj').textContent = o.a ? '첫 잔 후 조정: ' + o.a : '';
   $('live').textContent = '';
   draw();
+  resetLog();
   show('card');
   mark(-1);
 }
@@ -313,6 +356,7 @@ function draw() {
     li.append(b); ol.append(li);
     prev = s.g;
   });
+  logText();
 }
 
 // 단계 표시: 다른 단계를 누르면 그 단계로, 지금 단계를 다시 누르면 다음 단계로 (마지막이면 해제)
@@ -359,13 +403,113 @@ if ('wakeLock' in navigator) {
   document.addEventListener('visibilitychange', () => { if (wantWake && document.visibilityState === 'visible') wake(); });
 }
 
+// ---------- 추출 기록 (글로 만들어 복사 → Claude·Aside 대화창에 붙여 넣기. 형식은 FORMAT.md) ----------
+const TASTES = ['좋았어요', '시었어요', '썼어요', '밍밍했어요', '떫었어요', '발효취 났어요'];
+const ROAST_KEY = 'brewcard.roast';
+function chips(box, type, name, items) {
+  for (const [v, t] of items) {
+    const l = el('label'), i = el('input');
+    i.type = type; i.name = name; i.value = v;
+    l.append(i, el('span', null, t));
+    box.append(l);
+  }
+}
+chips($('logStar'), 'radio', 'star', [1, 2, 3, 4, 5].map((n) => [n, '★' + n]));
+chips($('logTaste'), 'checkbox', 'taste', TASTES.map((t) => [t, t]));
+
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const clicks = (c) => (Array.isArray(c) ? c.join('~') : str(c));
+// 로스팅일은 원두(로스터리 + 이름)마다 이 기기에 기억해 두고 다음 기록에 미리 채운다.
+const beanKey = (o) => str(o.r) + '|' + str(o.b);
+function loadRoasts() { try { const m = JSON.parse(localStorage.getItem(ROAST_KEY) || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } }
+function saveRoast(o, v) {
+  try { const m = loadRoasts(); if (v) m[beanKey(o)] = v; else delete m[beanKey(o)]; localStorage.setItem(ROAST_KEY, JSON.stringify(m)); } catch (e) { /* 저장 불가 */ }
+}
+
+function resetLog() {
+  const o = card.o;
+  $('log').open = false;
+  for (const i of $('log').querySelectorAll('.chips input')) i.checked = false;
+  $('logC').value = num(o.c) ? o.c : '';
+  $('logC').placeholder = Array.isArray(o.c) ? '레시피 ' + clicks(o.c) : '';
+  $('logT').value = num(o.T) ? o.T : '';
+  $('logTime').value = ''; $('logMemo').value = '';
+  $('logRoast').value = loadRoasts()[beanKey(o)] || '';
+  $('logMsg').textContent = '';
+  logText();
+}
+
+function logText() {
+  if (!card || !shown) return '';
+  const o0 = card.o, o = shown.o, now = new Date(), v = (id) => $(id).value.trim();
+  const star = $('log').querySelector('input[name=star]:checked');
+  const tastes = [...$('log').querySelectorAll('input[name=taste]:checked')].map((i) => i.value);
+  const c = v('logC'), T = v('logT'), time = v('logTime'), roast = v('logRoast'), memo = v('logMemo');
+  const changed = [];
+  if (num(o0.g) && o.g !== o0.g) changed.push(`원두 ${o0.g}→${o.g}g (물 비율대로)`);
+  const cn = parseFloat(c), [lo, hi] = Array.isArray(o0.c) ? o0.c : [o0.c, o0.c];
+  if (isFinite(cn) && !(num(lo) && cn >= lo && cn <= hi)) changed.push(`분쇄 ${clicks(o0.c) || '?'}→${cn}클릭`);
+  const tn = parseFloat(T);
+  if (isFinite(tn) && tn !== o0.T) changed.push(`온도 ${num(o0.T) ? o0.T : '?'}→${tn}℃`);
+  let age = '';
+  const rm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(roast);
+  if (rm) {
+    const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(+rm[1], rm[2] - 1, +rm[3])) / 864e5);
+    age = `로스팅일 ${roast}` + (days >= 0 ? ` (로스팅 후 ${days}일)` : '');
+  }
+  const text = join([
+    `[브루 기록] ${join([o.r, o.b], ' · ')} · ${join([o.id, o.d, o.t], ' ')}`,
+    join(['날짜 ' + ymd(now), age], ' · '),
+    join([num(o.g) ? `원두 ${o.g}g` : '', c ? `분쇄 ${c}클릭` : (o0.c != null ? `분쇄 ${clicks(o0.c)}클릭` : ''),
+      T ? T + '℃' : '', waterText(o), time ? '총 시간 ' + time : ''], ' · '),
+    '바꾼 것: ' + (changed.length ? changed.join(', ') : '없음 (레시피 그대로)'),
+    tastes.length ? '맛: ' + tastes.join(', ') : '',
+    star ? '평가 ★' + star.value : '',
+    memo ? '메모: ' + memo : '',
+  ], '\n');
+  $('logOut').value = text;
+  return text;
+}
+
+function logReady() {
+  if ($('log').querySelector('.chips input:checked') || $('logMemo').value.trim()) return true;
+  $('logMsg').textContent = '평가나 맛을 하나 이상 골라 주세요.';
+  return false;
+}
+$('log').addEventListener('input', logText);
+$('log').addEventListener('change', (e) => { if (e.target.id === 'logRoast' && card) saveRoast(card.o, e.target.value); logText(); });
+$('bCopy').addEventListener('click', async () => {
+  if (!logReady()) return;
+  const text = logText();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = $('logOut'); ta.focus(); ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e2) { /* 없음 */ }
+    if (!ok) { $('logMsg').textContent = '복사하지 못했어요. 위 글을 길게 눌러 복사해 주세요.'; return; }
+  }
+  $('logMsg').textContent = '복사했어요. Claude나 Aside 대화창에 붙여 넣어 주세요.';
+});
+if (navigator.share) {
+  $('bShare').hidden = false;
+  $('bShare').addEventListener('click', () => { if (logReady()) navigator.share({ text: logText() }).catch(() => {}); });
+}
+
 // ---------- 연결 ----------
 $('bClear').addEventListener('click', () => { try { localStorage.removeItem(KEY); } catch (e) {} renderHome(); });
 document.querySelectorAll('a.home').forEach((a) => a.addEventListener('click', (e) => {
   e.preventDefault(); history.pushState(null, '', location.pathname + location.search); route();
 }));
 window.addEventListener('hashchange', route);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// 새 버전 안내: 열어 둔 사이 새 서비스 워커가 자리를 잡으면 새로고침 버튼을 띄운다. 앱으로 돌아올 때마다 새 버전을 확인한다.
+if ('serviceWorker' in navigator) {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) $('upd').hidden = false; });
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
+$('bUpd').addEventListener('click', () => location.reload());
 route();
 })();
 </script>

@@ -587,4 +587,12 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 setStatus();
 route();
 sync();
-if ('serviceWorker' in navigator && !localBase) navigator.serviceWorker.register('sw.js').catch(() => {});
+// 새 버전 안내: 열어 둔 사이 새 서비스 워커가 자리를 잡으면 새로고침 버튼을 띄운다. 앱으로 돌아올 때마다 새 버전을 확인한다.
+if ('serviceWorker' in navigator && !localBase) {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) $('upd').hidden = false; });
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
+$('bUpd').addEventListener('click', () => location.reload());

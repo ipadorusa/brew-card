@@ -90,6 +90,8 @@ details.sec[open]{padding-bottom:10px}
 .steps li{margin:4px 0}
 .msg{border-radius:12px;padding:10px 12px;margin:12px 0;background:var(--hi)}
 .msg.ok{background:var(--obg);color:var(--ofg)}
+.upd{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:696px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--fg);color:var(--bg);border-radius:14px;padding:8px 8px 8px 16px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.3);z-index:9}
+.upd button{font:inherit;font-weight:800;min-height:44px;padding:6px 14px;border-radius:10px;border:0;background:var(--bg);color:var(--fg)}
 </style>
 </head>
 <body>
@@ -107,6 +109,7 @@ details.sec[open]{padding-bottom:10px}
   </nav>
   <div id="view"></div>
 </main>
+<div class="upd" id="upd" role="status" hidden><span>새 버전이 나왔어요</span><button type="button" id="bUpd">새로고침</button></div>
 <script type="module" src="library.js"></script>
 </body>
 </html>
