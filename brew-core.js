@@ -278,6 +278,16 @@ export function roastAge(text, now = new Date()) {
   return { date: m[0], days, range, tip, guess: /추정/.test(row[1]) };
 }
 
+// 원두 파일의 '판매 상태' 칸에서 확인일과 상태를 읽는다. 템플릿 자리표시나 형식이 다르면 null.
+export function saleStatus(text) {
+  const row = text.split(/\r?\n/).map(splitRow).find((c) => c && c[0] === '판매 상태');
+  const cell = row && row[1] || '';
+  if (/YYYY-MM-DD 확인\(근거\): 판매 중 \/ 품절 \/ 판매 종료/.test(cell)) return null;
+  const date = /^(\d{4}-\d{2}-\d{2}) 확인/.exec(cell);
+  const status = /:\s*(판매 중|품절|판매 종료|확인 못 함)/.exec(cell);
+  return date && status ? { status: status[1], date: date[1] } : null;
+}
+
 // ---------- 그라인더 환산 ----------
 
 // 코만단테 C40 클릭 → 1Zpresso ZP6 Special 눈금 "숫자.클릭" (예: 24 → "4.9" = 숫자 4에서 9클릭, 49클릭).

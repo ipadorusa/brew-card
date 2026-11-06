@@ -2,7 +2,7 @@
 // 이 파일과 페이지는 공개 저장소에 올라가지만 내용은 없다. 내용은 이 기기에 저장한 읽기 전용 토큰으로만 읽는다.
 // 개발용: library.html?local=../ 이면 GitHub 대신 같은 서버의 ../beans/, ../recipes/를 읽는다.
 
-import { tablesIn, clean, parseBeanText, NON_BEAN, roastAge, zp6Of } from './brew-core.js';
+import { tablesIn, clean, parseBeanText, NON_BEAN, roastAge, saleStatus, zp6Of } from './brew-core.js';
 import { registerSW } from './pwa.js';
 
 const KEY = 'coffee-lib:';
@@ -311,7 +311,7 @@ async function cardUrl(obj) {
 }
 
 async function openCard(obj) {
-  if (typeof CompressionStream === 'undefined') { alert('이 브라우저는 브루 카드를 만들 수 없어요. iOS 16.4 이상이나 최신 브라우저에서 열어 주세요.'); return; }
+  if (typeof CompressionStream === 'undefined') { alert('이 브라우저에서는 브루 카드를 만들 수 없어요. Safari나 브라우저를 최신 버전으로 업데이트한 뒤 다시 열어 주세요.'); return; }
   location.href = await cardUrl(obj);
 }
 
@@ -420,8 +420,10 @@ async function showBean(name) {
   const bean = parseBeanText(text);
   const byId = new Map(bean.recipes.map((r) => [r.id, r]));
   const age = roastAge(text);
+  const sale = saleStatus(text);
   const ageMsg = age ? `<p class="msg"><b>로스팅 후 ${age.days}일${age.guess ? ' (추정)' : ''}</b> · 로스팅일 ${esc(age.date)} · ${esc(age.range)}: ${esc(age.tip)}. ${aTag({ url: `#/doc/${encodeURIComponent(AGE_GUIDE)}` }, '경과일별 조정표')}</p>` : '';
-  const quick = ageMsg + (bean.recipes.length ? `
+  const saleMsg = sale ? `<p class="msg"><b>${esc(sale.status)}</b> · ${esc(sale.date)} 확인</p>` : '';
+  const quick = ageMsg + saleMsg + (bean.recipes.length ? `
     <div class="qhead"><h2>브루 카드</h2><span>눌러서 폰용 카드로 열어요</span></div>
     <div class="qcards">${bean.recipes.map((r) => `
       <button type="button" class="qcard" data-id="${esc(r.id)}">

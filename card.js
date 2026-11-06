@@ -66,7 +66,7 @@ async function route() {
       : '주소 형식이 맞지 않아요. QR을 다시 스캔해 주세요.');
   }
   if (typeof DecompressionStream === 'undefined') {
-    return showErr('이 브라우저는 카드를 풀 수 없어요. iOS 17 이상의 Safari나 최신 브라우저에서 열어 주세요.');
+    return showErr('이 브라우저에서는 브루 카드를 열 수 없어요. Safari나 브라우저를 최신 버전으로 업데이트한 뒤 다시 열어 주세요.');
   }
   let c;
   try { c = cardOf(await decodePayload(h.slice(dot + 1))); }
