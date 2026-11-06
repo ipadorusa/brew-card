@@ -1,6 +1,6 @@
 // 브루 카드: 주소 # 뒤의 레시피(FORMAT.md v1)를 풀어 폰용 카드로 보여준다. index.html이 읽는다.
 
-import { isNum as num, cardOf, scaleCard } from './brew-core.js';
+import { isNum as num, cardOf, scaleCard, zp6Of } from './brew-core.js';
 import { registerSW } from './pwa.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,7 +28,7 @@ function grindText(c) {
   const a = Array.isArray(c) ? c : [c, c];
   if (!num(a[0]) || !num(a[1])) return '';
   const f = (fn) => (a[0] === a[1] ? fn(a[0]) : fn(a[0]) + '~' + fn(a[1]));
-  return `코만단테 ${f(String)}클릭 ≈ ${f((x) => r1(x * 30))}µm (K-Ultra ${f((x) => r1(x / 4 + 1))} / EK43 ${f((x) => r1(x / 4 + 3))})`;
+  return `코만단테 ${f(String)}클릭 ≈ ${f((x) => r1(x * 30))}µm (ZP6\u00a0${f(zp6Of)} / K-Ultra\u00a0${f((x) => r1(x / 4 + 1))} / EK43\u00a0${f((x) => r1(x / 4 + 3))})`; // \u00a0: 이름과 값 사이에서 줄이 안 바뀌게
 }
 function waterText(o) {
   const parts = [];

@@ -2,7 +2,7 @@
 // 이 파일과 페이지는 공개 저장소에 올라가지만 내용은 없다. 내용은 이 기기에 저장한 읽기 전용 토큰으로만 읽는다.
 // 개발용: library.html?local=../ 이면 GitHub 대신 같은 서버의 ../beans/, ../recipes/를 읽는다.
 
-import { tablesIn, clean, parseBeanText, NON_BEAN, roastAge } from './brew-core.js';
+import { tablesIn, clean, parseBeanText, NON_BEAN, roastAge, zp6Of } from './brew-core.js';
 import { registerSW } from './pwa.js';
 
 const KEY = 'coffee-lib:';
@@ -315,7 +315,7 @@ async function openCard(obj) {
   location.href = await cardUrl(obj);
 }
 
-const grind = (c) => `C${Array.isArray(c) ? c.join('~') : c}`;
+const grind = (c) => { const a = Array.isArray(c) ? c : [c]; return `C${a.join('~')} / ZP6 ${a.map(zp6Of).join('~')}`; };
 
 // ---------- 로스팅 후 경과일 (계산은 brew-core.js roastAge) ----------
 

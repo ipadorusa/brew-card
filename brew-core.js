@@ -278,6 +278,17 @@ export function roastAge(text, now = new Date()) {
   return { date: m[0], days, range, tip, guess: /추정/.test(row[1]) };
 }
 
+// ---------- 그라인더 환산 ----------
+
+// 코만단테 C40 클릭 → 1Zpresso ZP6 Special 눈금 "숫자.클릭" (예: 24 → "4.9" = 숫자 4에서 9클릭, 49클릭).
+// ZP6 Special은 1클릭 22µm, 10클릭이 숫자 1이다(1Zpresso 공식 표). C40 날 간격(클릭 × 30µm)에 360µm를 더해 22µm로 나눈다.
+// 360µm는 날 구조 차이(영점) 보정값으로, 공식 푸어오버 구간 4.0~5.0·1Zpresso 챔피언 레시피 4.1~5.6·언더빈 C40 21 = ZP6 5.0에 맞춘
+// 편집자 환산이다(recipes/v60-switch.md '분쇄도 환산 기준').
+export function zp6Of(c40) {
+  const k = Math.round((c40 * 30 + 360) / 22);
+  return `${Math.floor(k / 10)}.${k % 10}`;
+}
+
 // ---------- 브루 카드 ----------
 
 export const isNum = (v) => typeof v === 'number' && isFinite(v);
