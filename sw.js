@@ -1,13 +1,14 @@
 // 브루 카드 서비스 워커: 앱 셸 cache-first.
 // VERSION은 손으로 올리지 않는다. deploy-viewer.sh가 배포할 때 뷰어 파일 내용의 해시로 바꿔 넣는다.
-const VERSION = 'f2fb0f1671a3';
+const VERSION = '6e2785809cc8';
 const PREFIX = 'brew-card-';
 const CACHE = PREFIX + VERSION;
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png',
+const SHELL = ['./', './index.html', './card.js', './pwa.js', './manifest.webmanifest', './icon.svg', './icon-180.png',
   './library.html', './library.js', './brew-core.js', './library.webmanifest'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 브라우저 HTTP 캐시에 남은 옛 파일이 섞이지 않게 늘 서버에서 새로 받는다 (GitHub Pages는 10분 캐시)
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {

@@ -2,11 +2,11 @@
 // 이 파일과 페이지는 공개 저장소에 올라가지만 내용은 없다. 내용은 이 기기에 저장한 읽기 전용 토큰으로만 읽는다.
 // 개발용: library.html?local=../ 이면 GitHub 대신 같은 서버의 ../beans/, ../recipes/를 읽는다.
 
-import { tablesIn, splitRow, clean, parseBeanText } from './brew-core.js';
+import { tablesIn, clean, parseBeanText, NON_BEAN, roastAge } from './brew-core.js';
+import { registerSW } from './pwa.js';
 
 const KEY = 'coffee-lib:';
 const DEFAULT_REPO = 'ipadorusa/my-coffe-recipe';
-const NON_BEAN = new Set(['TEMPLATE.md', 'INDEX.md', 'WISHLIST.md']);
 const DOC_NAMES = {
   'recipes/v60-switch.md': 'V60 Switch 레시피',
   'recipes/orea.md': 'OREA O1 레시피',
@@ -317,29 +317,9 @@ async function openCard(obj) {
 
 const grind = (c) => `C${Array.isArray(c) ? c.join('~') : c}`;
 
-// ---------- 로스팅 후 경과일 (recipes/blends-and-bean-guide.md 5-2표 구간) ----------
+// ---------- 로스팅 후 경과일 (계산은 brew-core.js roastAge) ----------
 
 const AGE_GUIDE = 'recipes/blends-and-bean-guide.md';
-const AGE_STAGES = [
-  [2, '0~2일', '가스가 가장 많아요. 2~3일 더 기다리면 좋아요'],
-  [7, '3~7일', '미디엄·다크 적기. 라이트는 뜸을 40~45초로 길게'],
-  [14, '8~14일', '라이트 적기. 레시피 그대로'],
-  [21, '15~21일', '뜸 25~30초, 온도 +1℃, 1~2클릭 가늘게'],
-  [30, '22~30일', '윗향이 꺾여요. 온도 +1~2℃, 2클릭 가늘게'],
-  [Infinity, '31일 이상', '산화가 진행돼요. 온도 +2℃, 가늘게, 원두 +1~2g'],
-];
-
-// 원두 파일의 '로스팅일' 칸이 YYYY-MM-DD로 시작할 때만 계산한다. 미확인이면 null.
-function roastAge(text) {
-  const row = text.split(/\r?\n/).map(splitRow).find((c) => c && c[0] === '로스팅일');
-  const m = row && /^(\d{4})-(\d{2})-(\d{2})/.exec(row[1] || '');
-  if (!m) return null;
-  const now = new Date();
-  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(+m[1], m[2] - 1, +m[3])) / 86400000);
-  if (!(days >= 0)) return null;
-  const [, range, tip] = AGE_STAGES.find(([max]) => days <= max);
-  return { date: m[0], days, range, tip, guess: /추정/.test(row[1]) };
-}
 
 const ageBadge = (a) => `<span class="badge">로스팅 후 ${a.days}일${a.guess ? ' (추정)' : ''}</span>`;
 
@@ -400,22 +380,28 @@ async function showBeans() {
 
   view.innerHTML = `<input class="search" id="q" type="search" placeholder="로스터리, 원두, 농장, 품종, 가공으로 찾기" aria-label="원두 찾기" value="${esc(load('q', '') || '')}"><ul class="cards" id="list"></ul>`;
   const list = $('list');
+  const done = (r) => /다 마심/.test(r['상태'] || '');
+  const item = (r) => {
+    const file = fileOf(r['파일'] || '');
+    const meta = [r['농장/생산자'], r['품종'], r['가공']].filter((x) => x && x !== '-').map(plain).join(' · ');
+    const star = r['최근 평가'] && r['최근 평가'] !== '-' ? `<span>${esc(r['최근 평가'])}</span>` : '';
+    return `<li><a class="bean" href="#/bean/${encodeURIComponent(file || '')}">
+      <span class="ro">${esc(plain(r['로스터리'] || ''))}${done(r) ? ' <span class="badge">다 마심</span>' : ''}</span>
+      <span class="nm">${esc(plain(r['원두'] || ''))}</span>
+      ${meta ? `<p class="meta">${esc(meta)}</p>` : ''}
+      ${r['로스팅'] ? `<p class="meta">로스팅 ${esc(plain(r['로스팅']))} <span class="age" data-file="${esc(file || '')}"></span></p>` : `<p class="meta age" data-file="${esc(file || '')}"></p>`}
+      <span class="foot"><span>${esc(plain(r['드리퍼 · 음료'] || ''))}</span><span>${star} ${esc(r['갱신일'] || '')}</span></span>
+    </a></li>`;
+  };
   const draw = () => {
     const q = $('q').value.trim().toLowerCase();
     save('q', $('q').value);
     const hits = rows.filter((r) => !q || Object.values(r).join(' ').toLowerCase().includes(q));
-    list.innerHTML = hits.length ? hits.map((r) => {
-      const file = fileOf(r['파일'] || '');
-      const meta = [r['농장/생산자'], r['품종'], r['가공']].filter((x) => x && x !== '-').map(plain).join(' · ');
-      const star = r['최근 평가'] && r['최근 평가'] !== '-' ? `<span>${esc(r['최근 평가'])}</span>` : '';
-      return `<li><a class="bean" href="#/bean/${encodeURIComponent(file || '')}">
-        <span class="ro">${esc(plain(r['로스터리'] || ''))}</span>
-        <span class="nm">${esc(plain(r['원두'] || ''))}</span>
-        ${meta ? `<p class="meta">${esc(meta)}</p>` : ''}
-        ${r['로스팅'] ? `<p class="meta">로스팅 ${esc(plain(r['로스팅']))} <span class="age" data-file="${esc(file || '')}"></span></p>` : `<p class="meta age" data-file="${esc(file || '')}"></p>`}
-        <span class="foot"><span>${esc(plain(r['드리퍼 · 음료'] || ''))}</span><span>${star} ${esc(r['갱신일'] || '')}</span></span>
-      </a></li>`;
-    }).join('') : `<li>${empty('찾는 원두가 없어요', '다른 말로 찾아 보세요.')}</li>`;
+    // 찾을 때는 다 마신 원두도 한 목록에, 평소에는 마시는 원두 먼저 보이고 다 마신 원두는 아래에 접어 둔다
+    const now = q ? hits : hits.filter((r) => !done(r)), past = q ? [] : hits.filter(done);
+    list.innerHTML = hits.length ? now.map(item).join('')
+      + (past.length ? `<li><details class="sec"><summary><h2>다 마신 원두 ${past.length}개</h2></summary><ul class="cards">${past.map(item).join('')}</ul></details></li>` : '')
+      : `<li>${empty('찾는 원두가 없어요', '다른 말로 찾아 보세요.')}</li>`;
     for (const s of list.querySelectorAll('.age[data-file]')) {
       if (s.dataset.file) ageOf(s.dataset.file).then((a) => { if (a) s.innerHTML = ageBadge(a); });
     }
@@ -587,12 +573,4 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 setStatus();
 route();
 sync();
-// 새 버전 안내: 열어 둔 사이 새 서비스 워커가 자리를 잡으면 새로고침 버튼을 띄운다. 앱으로 돌아올 때마다 새 버전을 확인한다.
-if ('serviceWorker' in navigator && !localBase) {
-  const had = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) $('upd').hidden = false; });
-  navigator.serviceWorker.register('sw.js').then((reg) => {
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
-  }).catch(() => {});
-}
-$('bUpd').addEventListener('click', () => location.reload());
+if (!localBase) registerSW();

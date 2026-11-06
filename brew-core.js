@@ -1,5 +1,5 @@
-// brew-core.js: 원두 파일(beans/*.md) 텍스트에서 표준 레시피 블록을 읽는다.
-// Node(scripts/brew-card.mjs)와 브라우저(library.js)가 같이 쓴다. 의존성 없음.
+// brew-core.js: 원두 파일(beans/*.md) 텍스트에서 표준 레시피 블록을 읽고, 브루 카드의 원두량 계산을 한다.
+// Node(scripts/*.mjs, tests/)와 브라우저(library.js, card.js)가 같이 쓴다. DOM을 쓰지 않는다. 의존성 없음.
 // 형식 명세: viewer/FORMAT.md
 
 export const LIMIT = { b: 25, a: 60, act: 20 };
@@ -250,4 +250,63 @@ export function parseBeanText(text, opts = {}) {
   }
   if (!def) def = (recipes.find((x) => x.t === 'ICE') || recipes[0] || {}).id;
   return { recipes, skips, default: def, defNote };
+}
+
+// ---------- 원두 라이브러리 ----------
+
+// beans/ 안에서 원두 파일이 아닌 것
+export const NON_BEAN = new Set(['TEMPLATE.md', 'INDEX.md', 'WISHLIST.md']);
+
+// 로스팅 후 경과일 구간 (recipes/blends-and-bean-guide.md 5-2표)
+export const AGE_STAGES = [
+  [2, '0~2일', '가스가 가장 많아요. 2~3일 더 기다리면 좋아요'],
+  [7, '3~7일', '미디엄·다크 적기. 라이트는 뜸을 40~45초로 길게'],
+  [14, '8~14일', '라이트 적기. 레시피 그대로'],
+  [21, '15~21일', '뜸 25~30초, 온도 +1℃, 1~2클릭 가늘게'],
+  [30, '22~30일', '윗향이 꺾여요. 온도 +1~2℃, 2클릭 가늘게'],
+  [Infinity, '31일 이상', '산화가 진행돼요. 온도 +2℃, 가늘게, 원두 +1~2g'],
+];
+
+// 원두 파일의 '로스팅일' 칸이 YYYY-MM-DD로 시작할 때만 계산한다. 미확인이거나 오늘보다 뒤면 null.
+export function roastAge(text, now = new Date()) {
+  const row = text.split(/\r?\n/).map(splitRow).find((c) => c && c[0] === '로스팅일');
+  const m = row && /^(\d{4})-(\d{2})-(\d{2})/.exec(row[1] || '');
+  if (!m) return null;
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(+m[1], m[2] - 1, +m[3])) / 86400000);
+  if (!(days >= 0)) return null;
+  const [, range, tip] = AGE_STAGES.find(([max]) => days <= max);
+  return { date: m[0], days, range, tip, guess: /추정/.test(row[1]) };
+}
+
+// ---------- 브루 카드 ----------
+
+export const isNum = (v) => typeof v === 'number' && isFinite(v);
+const str = (v) => (v == null ? '' : String(v));
+
+// 주소에서 푼 레시피 객체(FORMAT.md)를 카드 화면용 {o, steps}로 바꾼다. 모양이 틀리면 던진다.
+export function cardOf(o) {
+  if (!o || typeof o !== 'object' || !Array.isArray(o.s) || !o.s.length) throw new Error('bad');
+  const steps = o.s.map((s) => {
+    if (!Array.isArray(s)) throw new Error('bad step');
+    return { label: str(s[0]).trim(), valve: s[1] === 0 || s[1] === 1 ? s[1] : null, g: isNum(s[2]) ? s[2] : null, act: str(s[3]) };
+  });
+  return { o, steps };
+}
+
+// 원두량 바꾸기: 물·얼음·바이패스·누적 g만 (g ÷ 원래 g) 비율로 바꾼다. 시각·분쇄·온도·비율 표기는 그대로.
+export function scaleCard(c, g) {
+  if (!isNum(c.o.g) || !isNum(g) || g === c.o.g) return c;
+  const k = g / c.o.g, sc = (v) => (isNum(v) ? Math.round(v * k) : v);
+  // 동작 문구 속 "+30g", "얼음 100g"도 같은 비율로 (안 바꾸면 오른쪽 누적 g와 어긋난다)
+  // 맨 앞 "+Ng"는 반올림한 누적 g의 차이로 맞춘다.
+  const act = (t) => t.replace(/(\d+(?:\.\d+)?)(\s*g)(?![a-zA-Z])/g, (m, n, u) => Math.round(n * k) + u);
+  let prev = 0;
+  const steps = c.steps.map((s) => {
+    const g2 = sc(s.g);
+    let a = act(s.act);
+    if (isNum(g2) && isNum(prev) && /^\+\d/.test(a)) a = a.replace(/^\+\d+(?:\.\d+)?/, '+' + (g2 - prev));
+    prev = g2;
+    return { ...s, g: g2, act: a };
+  });
+  return { o: { ...c.o, g, w: sc(c.o.w), i: sc(c.o.i), p: sc(c.o.p) }, steps };
 }
