@@ -423,6 +423,22 @@ function withoutHeaderNote(text) {
   return [...lines.slice(0, end).filter((l) => !/^>/.test(l)), ...lines.slice(end)].join('\n');
 }
 
+// 출처 섹션은 바깥 링크만 한 줄씩: "- 이름 (설명): https://… (열람일)" → "- [이름](https://…)". 링크 없는 기반 문서 줄은 화면에서 뺀다(파일에는 남는다).
+function compactSources(text) {
+  const out = [], seen = new Set();
+  let inSrc = false;
+  for (const l of text.split(/\r?\n/)) {
+    if (/^##\s/.test(l)) { inSrc = /^##\s+(\d+\.\s*)?(참고\s*)?출처/.test(l); out.push(l); continue; }
+    if (!inSrc) { out.push(l); continue; }
+    const url = (/^\s*-\s.*?(https?:\/\/[^\s)>\]`]+)/.exec(l) || [])[1];
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const label = l.replace(/^\s*-\s*/, '').split(/:\s|\s*\(|https?:\/\//)[0].replace(/[`*[\]"]/g, '').trim().slice(0, 40);
+    out.push(`- [${label || new URL(url).hostname}](${url})`);
+  }
+  return out.join('\n');
+}
+
 async function showBean(name) {
   setTab('beans');
   if (needSetup()) return;
@@ -444,7 +460,7 @@ async function showBean(name) {
         <span class="t">${esc(r.d)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
         <span class="s">${esc(r.id)} · ${esc(grind(r.c, r.z))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
       </button>`).join('')}</div>` : '');
-  view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(withoutHeaderNote(text), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
+  view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(compactSources(withoutHeaderNote(text)), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
   for (const b of view.querySelectorAll('.qcard')) b.addEventListener('click', () => openCard(byId.get(b.dataset.id)));
   for (const h of view.querySelectorAll('.doc h3')) {
     const id = (/^(\d+-\d+)\./.exec(h.textContent.trim()) || [])[1];
