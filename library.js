@@ -415,6 +415,14 @@ async function showBeans() {
   draw();
 }
 
+// 원두 파일 머리의 작성 기록(첫 ## 앞의 > 줄: 작성일·사용자 원문·요청 범위·추가 이력)은 화면에서 뺀다. 파일에는 남는다.
+function withoutHeaderNote(text) {
+  const lines = text.split(/\r?\n/);
+  const end = lines.findIndex((l) => /^##\s/.test(l));
+  if (end < 0) return text;
+  return [...lines.slice(0, end).filter((l) => !/^>/.test(l)), ...lines.slice(end)].join('\n');
+}
+
 async function showBean(name) {
   setTab('beans');
   if (needSetup()) return;
@@ -428,8 +436,7 @@ async function showBean(name) {
   const sale = saleStatus(text);
   const ageMsg = age ? `<p class="msg"><b>로스팅 후 ${age.days}일${age.guess ? ' (추정)' : ''}</b> · 로스팅일 ${esc(age.date)} · ${esc(age.range)}: ${esc(age.tip)}. ${aTag({ url: `#/doc/${encodeURIComponent(AGE_GUIDE)}` }, '경과일별 조정표')}</p>` : '';
   const saleMsg = sale ? `<p class="msg"><b>${esc(sale.status)}</b> · ${esc(sale.date)} 확인</p>` : '';
-  const addMsg = `<p class="meta"><a href="#/add/${encodeURIComponent(name)}">＋ 이 원두에 상품 링크·봉투 사진 보내기</a></p>`;
-  const quick = ageMsg + saleMsg + addMsg + (bean.recipes.length ? `
+  const quick = ageMsg + saleMsg + (bean.recipes.length ? `
     <div class="qhead"><h2>브루 카드</h2><span>눌러서 폰용 카드로 열어요</span></div>
     <div class="qcards">${bean.recipes.map((r) => `
       <button type="button" class="qcard" data-id="${esc(r.id)}">
@@ -437,7 +444,7 @@ async function showBean(name) {
         <span class="t">${esc(r.d)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
         <span class="s">${esc(r.id)} · ${esc(grind(r.c, r.z))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
       </button>`).join('')}</div>` : '');
-  view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(text, 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
+  view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(withoutHeaderNote(text), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
   for (const b of view.querySelectorAll('.qcard')) b.addEventListener('click', () => openCard(byId.get(b.dataset.id)));
   for (const h of view.querySelectorAll('.doc h3')) {
     const id = (/^(\d+-\d+)\./.exec(h.textContent.trim()) || [])[1];
