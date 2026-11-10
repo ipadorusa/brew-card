@@ -81,7 +81,7 @@ details.sec[open]>summary::before{transform:rotate(90deg)}
 details.sec[open]{padding-bottom:10px}
 .cardbtn{font:inherit;font-size:13px;font-weight:700;border-radius:999px;border:1.5px solid var(--btn);background:transparent;color:var(--fg);padding:2px 10px;min-height:30px;cursor:pointer}
 .form label{display:block;font-weight:700;margin:14px 0 4px}
-.form input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.form input,.form textarea{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 .form .help{color:var(--mut);font-size:14px;margin:4px 0 0}
 .btn{font:inherit;font-weight:700;min-height:46px;padding:8px 18px;border-radius:12px;border:2px solid var(--btn);background:var(--btn);color:var(--btnfg);cursor:pointer}
 .btn.ghost{background:transparent;color:var(--fg)}
@@ -90,6 +90,7 @@ details.sec[open]{padding-bottom:10px}
 .steps li{margin:4px 0}
 .msg{border-radius:12px;padding:10px 12px;margin:12px 0;background:var(--hi)}
 .msg.ok{background:var(--obg);color:var(--ofg)}
+.msg .btn{display:inline-block;margin-top:8px;text-decoration:none}
 .upd{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:696px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--fg);color:var(--bg);border-radius:14px;padding:8px 8px 8px 16px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.3);z-index:9}
 .upd button{font:inherit;font-weight:800;min-height:44px;padding:6px 14px;border-radius:10px;border:0;background:var(--bg);color:var(--fg)}
 </style>
@@ -106,6 +107,7 @@ details.sec[open]{padding-bottom:10px}
     <a href="#/" data-tab="beans">원두</a>
     <a href="#/wish" data-tab="wish">구매 후보</a>
     <a href="#/docs" data-tab="docs">가이드</a>
+    <a href="#/add" data-tab="add">추가</a>
   </nav>
   <div id="view"></div>
 </main>

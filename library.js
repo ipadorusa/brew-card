@@ -11,6 +11,8 @@ const DOC_NAMES = {
   'recipes/v60-switch.md': 'V60 Switch 레시피',
   'recipes/orea.md': 'OREA O1 레시피',
   'recipes/graycano.md': '그레이카노 레시피',
+  'recipes/v60.md': 'V60 레시피',
+  'recipes/solo.md': 'SOLO 레시피',
   'recipes/blends-and-bean-guide.md': '블렌드 · 원두 가이드',
   'recipes/REVIEW.md': '브루잉 챔피언 검토',
   'beans/TEMPLATE.md': '원두 파일 양식',
@@ -51,14 +53,17 @@ const apiBase = (() => {
   return v && v.startsWith('/') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? v.replace(/\/$/, '') : 'https://api.github.com';
 })();
 
-async function gh(path) {
+async function gh(path, body) {
   const { token } = cfg();
   const res = await fetch(`${apiBase}${path}`, {
+    method: body ? 'POST' : 'GET',
     headers: {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
+    body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -150,7 +155,7 @@ async function sync({ force = false } = {}) {
       const keep = new Set(t.files.map((f) => KEY + 'blob:' + f.sha));
       for (const k of cacheKeys()) if (!keep.has(k)) { try { localStorage.removeItem(k); } catch { /* 없음 */ } }
     }
-    if (changed) route();
+    if (changed && !/^#\/(add|settings)\b/.test(location.hash)) route(); // 입력 중인 폼은 다시 그리지 않는다
     prefetch();
   } catch (e) {
     state.error = e instanceof HttpError ? e.message : '인터넷에 연결되지 않았어요.';
@@ -315,7 +320,7 @@ async function openCard(obj) {
   location.href = await cardUrl(obj);
 }
 
-const grind = (c) => { const a = Array.isArray(c) ? c : [c]; return `C${a.join('~')} / ZP6 ${a.map(zp6Of).join('~')}`; };
+const grind = (c, z) => { const a = Array.isArray(c) ? c : [c]; return `C${a.join('~')} / ZP6 ${z || a.map(zp6Of).join('~')}`; };
 
 // ---------- 로스팅 후 경과일 (계산은 brew-core.js roastAge) ----------
 
@@ -429,7 +434,7 @@ async function showBean(name) {
       <button type="button" class="qcard" data-id="${esc(r.id)}">
         <span class="g">${esc(String(r.g))}g</span>
         <span class="t">${esc(r.d)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
-        <span class="s">${esc(r.id)} · ${esc(grind(r.c))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
+        <span class="s">${esc(r.id)} · ${esc(grind(r.c, r.z))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
       </button>`).join('')}</div>` : '');
   view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(text, 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
   for (const b of view.querySelectorAll('.qcard')) b.addEventListener('click', () => openCard(byId.get(b.dataset.id)));
@@ -512,7 +517,7 @@ function showSettings() {
     <ol class="steps">
       <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub 토큰 만들기 페이지</a>를 열어요. (Fine-grained token)</li>
       <li><b>Repository access</b>: Only select repositories → <code>${esc(c.repo.split('/')[1] || c.repo)}</code></li>
-      <li><b>Permissions → Repository permissions → Contents</b>: Read-only. 다른 권한은 주지 않아요.</li>
+      <li><b>Permissions → Repository permissions → Contents</b>: Read-only. 다른 권한은 주지 않아요. (추가 탭에서 원두 요청을 버튼 한 번으로 보내려면 <b>Issues</b>: Read and write도 줘요. 안 줘도 GitHub 화면을 거쳐 보낼 수 있어요.)</li>
       <li>만든 토큰(<code>github_pat_…</code>)을 아래에 붙여 넣어요.</li>
     </ol>
     <form class="form" id="f">
@@ -557,6 +562,61 @@ function showSettings() {
   });
 }
 
+// ---------- 원두 추가 (요청 이슈) ----------
+
+// 상품 링크를 '원두 요청' 이슈로 남긴다. Claude Code에서 "원두 요청 처리해줘"라고 하면 스킬 §9가 원두 파일을 만들어 PR로 올린다.
+// 토큰에 Issues 쓰기 권한이 있으면 바로 만들고, 없으면(읽기 전용) 내용을 채운 GitHub 이슈 양식을 열게 한다.
+const REQUEST_LABEL = '원두 요청';
+const cleanLink = (u) => {
+  const m = /^https?:\/\/(?:m\.)?smartstore\.naver\.com\/([^/?#\s]+)\/products\/(\d+)/.exec(u);
+  return m ? `https://smartstore.naver.com/${m[1]}/products/${m[2]}` : u.replace(/[?&](NaPm|utm_[a-z]+)=[^&#]*/g, '').replace(/[)\],.;]+$/, '');
+};
+
+function requestOf(links, roast, memo) {
+  const host = (u) => { try { return new URL(u).pathname.split('/')[1] || new URL(u).hostname; } catch { return u; } };
+  const title = `원두 요청: ${host(links[0])}${links.length > 1 ? ` 외 ${links.length - 1}개` : ''}`;
+  const sec = (h, v) => `### ${h}\n\n${v || '_No response_'}`;
+  return { title, body: [sec('상품 링크', links.join('\n')), sec('로스팅일', roast), sec('메모', memo)].join('\n\n') };
+}
+
+function showAdd() {
+  setTab('add');
+  const { repo } = cfg();
+  view.innerHTML = `
+    <h2 style="font-size:19px;margin:4px 0 6px">원두 추가</h2>
+    <p>산 원두의 상품 링크를 보내면 저장소에 <b>원두 요청</b>이 생겨요. Claude Code에서 "원두 요청 처리해줘"라고 하면 레시피를 만들어 PR로 올리고, PR을 머지하면 원두 목록에 나와요.</p>
+    <form class="form" id="af">
+      <label for="urls">상품 링크</label>
+      <textarea id="urls" rows="4" autocapitalize="off" spellcheck="false" placeholder="https://smartstore.naver.com/…&#10;한 줄에 하나씩"></textarea>
+      <label for="roast">로스팅일 (알면)</label>
+      <input id="roast" type="date">
+      <label for="memo">메모</label>
+      <input id="memo" placeholder="예: 아이스만, 500g 샀어요">
+      <div class="row"><button class="btn" type="submit">요청 보내기</button></div>
+    </form>
+    <div id="amsg" aria-live="polite"></div>`;
+  $('af').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const links = [...new Set(($('urls').value.match(/https?:\/\/[^\s<>"']+/g) || []).map(cleanLink))];
+    if (!links.length) { $('amsg').innerHTML = '<p class="msg">상품 링크(https://…)를 넣어 주세요.</p>'; return; }
+    const { title, body } = requestOf(links, $('roast').value, $('memo').value.trim());
+    const form = `https://github.com/${repo}/issues/new?` + new URLSearchParams({ template: 'bean-request.yml', title, urls: links.join('\n'), roast: $('roast').value, memo: $('memo').value.trim() });
+    const fallback = (why) => {
+      $('amsg').innerHTML = `<p class="msg">${esc(why)} GitHub 화면에서 <b>Create</b>를 눌러 주세요.<br><a class="btn" href="${esc(form)}" target="_blank" rel="noopener noreferrer">GitHub에서 요청 보내기</a></p>`;
+    };
+    if (localBase || !cfg().token) return fallback('이 화면에서는 바로 보낼 수 없어요.');
+    $('amsg').innerHTML = '<p class="msg">보내는 중…</p>';
+    try {
+      const issue = await gh(`/repos/${repo}/issues`, { title, body, labels: [REQUEST_LABEL] });
+      $('af').reset();
+      $('amsg').innerHTML = `<p class="msg ok">요청을 보냈어요. ${aTag({ url: issue.html_url, ext: true }, `#${issue.number} 보기`)}<br>Claude Code에서 "원두 요청 처리해줘"라고 하면 돼요.</p>`;
+    } catch (err) {
+      if (err instanceof HttpError && [401, 403, 404, 422].includes(err.status)) fallback('토큰이 읽기 전용이라 여기서 바로 보낼 수 없어요.');
+      else $('amsg').innerHTML = `<p class="msg">${esc(errText(err))}</p>`;
+    }
+  });
+}
+
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const [kind, ...rest] = h.split('/');
@@ -566,6 +626,7 @@ function route() {
   if (kind === 'docs') return showDocs();
   if (kind === 'doc' && arg) return showDoc(arg);
   if (kind === 'settings') return showSettings();
+  if (kind === 'add') return showAdd();
   return showBeans();
 }
 

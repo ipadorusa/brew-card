@@ -24,11 +24,11 @@ const str = (v) => (v == null ? '' : String(v));
 
 // ---------- 표기 ----------
 const r1 = (x) => String(Math.round(x * 10) / 10);
-function grindText(c) {
+function grindText(c, z) {
   const a = Array.isArray(c) ? c : [c, c];
   if (!num(a[0]) || !num(a[1])) return '';
   const f = (fn) => (a[0] === a[1] ? fn(a[0]) : fn(a[0]) + '~' + fn(a[1]));
-  return `코만단테 ${f(String)}클릭 ≈ ${f((x) => r1(x * 30))}µm (ZP6\u00a0${f(zp6Of)})`; // \u00a0: 이름과 값 사이에서 줄이 안 바뀌게
+  return `코만단테 ${f(String)}클릭 ≈ ${f((x) => r1(x * 30))}µm (ZP6\u00a0${z || f(zp6Of)})`; // \u00a0: 이름과 값 사이에서 줄이 안 바뀌게
 }
 function waterText(o) {
   const parts = [];
@@ -144,7 +144,7 @@ function draw() {
   const spec = $('spec'); spec.textContent = '';
   const doseEl = el('div', 'dose' + (changed ? ' chg' : ''), num(o.g) ? o.g + 'g' : '—'); doseEl.append(el('small', null, '원두'));
   const gp = el('p', 'grind');
-  const gt = (o.c != null && grindText(o.c)) || '분쇄 정보 없음', cut = gt.indexOf(' (');
+  const gt = (o.c != null && grindText(o.c, o.z)) || '분쇄 정보 없음', cut = gt.indexOf(' (');
   if (cut > 0) gp.append(el('span', null, gt.slice(0, cut)), ' ', el('span', null, gt.slice(cut + 1))); else gp.textContent = gt;
   spec.append(doseEl, gp,
     el('p', null, join([num(o.T) ? o.T + '℃' : '', o.ra ? '비율 ' + o.ra : ''], ' · ')));

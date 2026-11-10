@@ -3,7 +3,7 @@
 // 형식 명세: viewer/FORMAT.md
 
 export const LIMIT = { b: 25, a: 60, act: 20 };
-const KEY_ORDER = ['b', 'r', 'd', 't', 'g', 'c', 'T', 'w', 'i', 'p', 'ra', 'f', 's', 'tt', 'a', 'id'];
+const KEY_ORDER = ['b', 'r', 'd', 't', 'g', 'c', 'z', 'T', 'w', 'i', 'p', 'ra', 'f', 's', 'tt', 'a', 'id'];
 
 // ---------- 문자열 다듬기 ----------
 
@@ -134,6 +134,15 @@ function parseClicks(cell) {
   return m[2] ? [Number(m[1]), Number(m[2])] : Number(m[1]);
 }
 
+// 분쇄 칸의 ZP6 값이 환산식과 다를 때만(로스터리가 ZP6 값을 직접 준 경우, 예: 언더빈 5.0) 그 값을 넘긴다.
+function zp6Given(cell, c) {
+  const m = /ZP6\s*(\d\.\d(?:\s*~\s*\d\.\d)?)/.exec(cell);
+  if (!m || c == null) return undefined;
+  const z = m[1].replace(/\s/g, '');
+  const [lo, hi] = Array.isArray(c) ? c : [c, c];
+  return z === (lo === hi ? zp6Of(lo) : `${zp6Of(lo)}~${zp6Of(hi)}`) ? undefined : z;
+}
+
 function parseValve(v) {
   if (v === undefined) return null;
   if (/닫/.test(v)) return 0;
@@ -154,7 +163,8 @@ function parseBlock(id, dripper, type, body, meta) {
   const cell = (pred) => { const k = col(info, pred); return k < 0 ? '' : (row[k] || ''); };
 
   const g = num(cell((h) => h === '원두'));
-  const c = parseClicks(cell((h) => h.startsWith('분쇄')));
+  const grindCell = cell((h) => h.startsWith('분쇄'));
+  const c = parseClicks(grindCell);
   const T = num(cell((h) => h.includes('온도')));
   const water = parseWater(cell((h) => h === '물'));
   const ra = cell((h) => h.startsWith('비율'));
@@ -188,7 +198,7 @@ function parseBlock(id, dripper, type, body, meta) {
   if (a) a = trimSegments(a, LIMIT.a);
 
   return orderKeys({
-    b: meta.b, r: meta.r, d: dripper, t: type, g, c, T,
+    b: meta.b, r: meta.r, d: dripper, t: type, g, c, z: zp6Given(grindCell, c), T,
     w: water.w, i: water.i, p: water.p, ra: ra || undefined, f, s, tt, a, id,
   });
 }

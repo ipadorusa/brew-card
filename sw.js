@@ -1,6 +1,6 @@
 // 브루 카드 서비스 워커: 앱 셸 cache-first.
 // VERSION은 손으로 올리지 않는다. deploy-viewer.sh가 배포할 때 뷰어 파일 내용의 해시로 바꿔 넣는다.
-const VERSION = '13c88715d464';
+const VERSION = '77121be3a97b';
 const PREFIX = 'brew-card-';
 const CACHE = PREFIX + VERSION;
 const SHELL = ['./', './index.html', './card.js', './pwa.js', './manifest.webmanifest', './icon.svg', './icon-180.png',
