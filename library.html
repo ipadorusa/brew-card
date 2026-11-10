@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#14100d" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-title" content="원두 노트">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="library.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -81,7 +81,7 @@ details.sec[open]>summary::before{transform:rotate(90deg)}
 details.sec[open]{padding-bottom:10px}
 .cardbtn{font:inherit;font-size:13px;font-weight:700;border-radius:999px;border:1.5px solid var(--btn);background:transparent;color:var(--fg);padding:2px 10px;min-height:30px;cursor:pointer}
 .form label{display:block;font-weight:700;margin:14px 0 4px}
-.form input,.form textarea{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.form input,.form textarea,.form select{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 .form .help{color:var(--mut);font-size:14px;margin:4px 0 0}
 .btn{font:inherit;font-weight:700;min-height:46px;padding:8px 18px;border-radius:12px;border:2px solid var(--btn);background:var(--btn);color:var(--btnfg);cursor:pointer}
 .btn.ghost{background:transparent;color:var(--fg)}
@@ -91,6 +91,9 @@ details.sec[open]{padding-bottom:10px}
 .msg{border-radius:12px;padding:10px 12px;margin:12px 0;background:var(--hi)}
 .msg.ok{background:var(--obg);color:var(--ofg)}
 .msg .btn{display:inline-block;margin-top:8px;text-decoration:none}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.thumbs img{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
 .upd{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:696px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--fg);color:var(--bg);border-radius:14px;padding:8px 8px 8px 16px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.3);z-index:9}
 .upd button{font:inherit;font-weight:800;min-height:44px;padding:6px 14px;border-radius:10px;border:0;background:var(--bg);color:var(--fg)}
 </style>

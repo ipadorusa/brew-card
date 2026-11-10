@@ -2,7 +2,7 @@
 // 이 파일과 페이지는 공개 저장소에 올라가지만 내용은 없다. 내용은 이 기기에 저장한 읽기 전용 토큰으로만 읽는다.
 // 개발용: library.html?local=../ 이면 GitHub 대신 같은 서버의 ../beans/, ../recipes/를 읽는다.
 
-import { tablesIn, clean, parseBeanText, NON_BEAN, roastAge, saleStatus, zp6Of } from './brew-core.js';
+import { tablesIn, splitRow, clean, parseBeanText, NON_BEAN, roastAge, saleStatus, zp6Of } from './brew-core.js';
 import { registerSW } from './pwa.js';
 
 const KEY = 'coffee-lib:';
@@ -53,10 +53,10 @@ const apiBase = (() => {
   return v && v.startsWith('/') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? v.replace(/\/$/, '') : 'https://api.github.com';
 })();
 
-async function gh(path, body) {
+async function gh(path, body, method = body ? 'POST' : 'GET') {
   const { token } = cfg();
   const res = await fetch(`${apiBase}${path}`, {
-    method: body ? 'POST' : 'GET',
+    method,
     headers: {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
@@ -73,7 +73,7 @@ async function gh(path, body) {
       : `GitHub 응답 ${res.status}`;
     throw new HttpError(res.status, msg);
   }
-  return res.json();
+  return res.status === 204 ? null : res.json();
 }
 
 // 파일 목록: [{path, sha}] (beans/*.md, recipes/*.md)
@@ -428,7 +428,8 @@ async function showBean(name) {
   const sale = saleStatus(text);
   const ageMsg = age ? `<p class="msg"><b>로스팅 후 ${age.days}일${age.guess ? ' (추정)' : ''}</b> · 로스팅일 ${esc(age.date)} · ${esc(age.range)}: ${esc(age.tip)}. ${aTag({ url: `#/doc/${encodeURIComponent(AGE_GUIDE)}` }, '경과일별 조정표')}</p>` : '';
   const saleMsg = sale ? `<p class="msg"><b>${esc(sale.status)}</b> · ${esc(sale.date)} 확인</p>` : '';
-  const quick = ageMsg + saleMsg + (bean.recipes.length ? `
+  const addMsg = `<p class="meta"><a href="#/add/${encodeURIComponent(name)}">＋ 이 원두에 상품 링크·봉투 사진 보내기</a></p>`;
+  const quick = ageMsg + saleMsg + addMsg + (bean.recipes.length ? `
     <div class="qhead"><h2>브루 카드</h2><span>눌러서 폰용 카드로 열어요</span></div>
     <div class="qcards">${bean.recipes.map((r) => `
       <button type="button" class="qcard" data-id="${esc(r.id)}">
@@ -517,7 +518,7 @@ function showSettings() {
     <ol class="steps">
       <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub 토큰 만들기 페이지</a>를 열어요. (Fine-grained token)</li>
       <li><b>Repository access</b>: Only select repositories → <code>${esc(c.repo.split('/')[1] || c.repo)}</code></li>
-      <li><b>Permissions → Repository permissions → Contents</b>: Read-only. 다른 권한은 주지 않아요. (추가 탭에서 원두 요청을 버튼 한 번으로 보내려면 <b>Issues</b>: Read and write도 줘요. 안 줘도 GitHub 화면을 거쳐 보낼 수 있어요.)</li>
+      <li><b>Permissions → Repository permissions → Contents</b>: Read-only. 다른 권한은 주지 않아요. (추가 탭에서 원두 요청을 버튼 한 번으로 보내고 봉투 사진을 올리려면 <b>Issues</b>: Read and write도 줘요. 링크만이면 안 줘도 GitHub 화면을 거쳐 보낼 수 있어요.)</li>
       <li>만든 토큰(<code>github_pat_…</code>)을 아래에 붙여 넣어요.</li>
     </ol>
     <form class="form" id="f">
@@ -564,57 +565,184 @@ function showSettings() {
 
 // ---------- 원두 추가 (요청 이슈) ----------
 
-// 상품 링크를 '원두 요청' 이슈로 남긴다. Claude Code에서 "원두 요청 처리해줘"라고 하면 스킬 §9가 원두 파일을 만들어 PR로 올린다.
-// 토큰에 Issues 쓰기 권한이 있으면 바로 만들고, 없으면(읽기 전용) 내용을 채운 GitHub 이슈 양식을 열게 한다.
+// 상품 링크·봉투 사진을 '원두 요청' 이슈로 남긴다. Claude Code에서 "원두 요청 처리해줘"라고 하면 스킬 §9가 원두 파일을 만들어 PR로 올린다.
+// 토큰에 Issues 쓰기 권한이 있으면 바로 만들고, 없으면(읽기 전용) 링크만 내용을 채운 GitHub 이슈 양식으로 보낸다.
+// 사진은 긴 변 PHOTO_MAX로 줄인 JPEG(캔버스로 다시 그려 위치 정보는 남지 않는다)를 base64로 이슈 댓글 여러 개에 나눠 붙이고,
+// 스킬이 읽은 뒤 그 댓글을 지운다(scripts/bean-requests.mjs photos·purge, 형식은 같은 파일의 photosOf).
 const REQUEST_LABEL = '원두 요청';
+const PHOTO_MAX = 1400, PHOTO_CHUNK = 60000, PHOTO_LIMIT = 4;
+const SS_LINK = /^https?:\/\/(?:m\.)?smartstore\.naver\.com\/([^/?#\s]+)\/products\/(\d+)/;
 const cleanLink = (u) => {
-  const m = /^https?:\/\/(?:m\.)?smartstore\.naver\.com\/([^/?#\s]+)\/products\/(\d+)/.exec(u);
+  const m = SS_LINK.exec(u);
   return m ? `https://smartstore.naver.com/${m[1]}/products/${m[2]}` : u.replace(/[?&](NaPm|utm_[a-z]+)=[^&#]*/g, '').replace(/[)\],.;]+$/, '');
 };
+const linkKey = (u) => { const m = SS_LINK.exec(u); return m ? `ss:${m[1]}/${m[2]}` : cleanLink(u); };
+const linksIn = (text) => [...new Set((text.match(/https?:\/\/[^\s<>"']+/g) || []).map(cleanLink))];
 
-function requestOf(links, roast, memo) {
+function requestOf({ links, photos, roast, bean, memo }) {
   const host = (u) => { try { return new URL(u).pathname.split('/')[1] || new URL(u).hostname; } catch { return u; } };
-  const title = `원두 요청: ${host(links[0])}${links.length > 1 ? ` 외 ${links.length - 1}개` : ''}`;
+  const what = links.length ? `${host(links[0])}${links.length > 1 ? ` 외 ${links.length - 1}개` : ''}` : `사진 ${photos}장`;
+  const title = bean ? `원두 요청: ${bean.replace(/\.md$/, '')} 보완` : `원두 요청: ${what}`;
   const sec = (h, v) => `### ${h}\n\n${v || '_No response_'}`;
-  return { title, body: [sec('상품 링크', links.join('\n')), sec('로스팅일', roast), sec('메모', memo)].join('\n\n') };
+  return {
+    title,
+    body: [sec('상품 링크', links.join('\n')), sec('사진', photos ? `${photos}장 (댓글로 붙임. Claude Code가 읽은 뒤 지워요)` : ''),
+      sec('로스팅일', roast), sec('기존 원두', bean), sec('메모', memo)].join('\n\n'),
+  };
 }
 
-function showAdd() {
+async function photoData(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const k = Math.min(1, PHOTO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k);
+    c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const d = c.toDataURL('image/jpeg', 0.8);
+    c.width = c.height = 0;
+    return d.slice(d.indexOf(',') + 1);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// 댓글 하나에 65,536자까지라 PHOTO_CHUNK자씩 나눈다.
+const photoComments = (name, data) => {
+  const n = Math.ceil(data.length / PHOTO_CHUNK);
+  return Array.from({ length: n }, (_, k) => `<!-- bean-photo name=${name} part=${k + 1}/${n} -->\n<details><summary>사진 ${name} (${k + 1}/${n}) · 읽은 뒤 지워져요</summary>\n\n\`\`\`\n${data.slice(k * PHOTO_CHUNK, (k + 1) * PHOTO_CHUNK)}\n\`\`\`\n</details>`);
+};
+
+// 중복 확인: 이미 저장된 원두의 상품 링크(받아 둔 원두 파일만 본다)와 아직 열린 요청의 링크(토큰에 Issues 읽기 권한이 있을 때만).
+async function dupsOf(links, bean) {
+  const want = new Map(links.map((u) => [linkKey(u), u]));
+  const out = [];
+  for (const f of state.tree?.files || []) {
+    const name = f.path.slice(6);
+    if (!f.path.startsWith('beans/') || NON_BEAN.has(name) || name === bean) continue;
+    let text;
+    try { text = await readFile(f.path); } catch { continue; }
+    const row = text.split(/\r?\n/).map(splitRow).find((c) => c && c[0] === '상품 링크');
+    for (const u of row ? linksIn(row[1]) : []) if (want.has(linkKey(u))) out.push(`이미 저장된 원두예요: <a href="#/bean/${encodeURIComponent(name)}">${esc(name.replace(/\.md$/, ''))}</a>`);
+  }
+  if (!localBase && cfg().token) {
+    try {
+      const open = await gh(`/repos/${cfg().repo}/issues?labels=${encodeURIComponent(REQUEST_LABEL)}&state=open&per_page=100`);
+      for (const i of open) if (linksIn(i.body || '').some((u) => want.has(linkKey(u)))) out.push(`이미 보낸 요청에 있어요: ${aTag({ url: i.html_url, ext: true }, `#${i.number}`)}`);
+    } catch { /* Issues 읽기 권한이 없으면 건너뛴다 */ }
+  }
+  return out;
+}
+
+function showAdd(target = '') {
   setTab('add');
   const { repo } = cfg();
   view.innerHTML = `
     <h2 style="font-size:19px;margin:4px 0 6px">원두 추가</h2>
-    <p>산 원두의 상품 링크를 보내면 저장소에 <b>원두 요청</b>이 생겨요. Claude Code에서 "원두 요청 처리해줘"라고 하면 레시피를 만들어 PR로 올리고, PR을 머지하면 원두 목록에 나와요.</p>
+    <p>산 원두의 상품 링크나 봉투·원두카드 사진을 보내면 저장소에 <b>원두 요청</b>이 생겨요. Claude Code에서 "원두 요청 처리해줘"라고 하면 사진에서 원두 이름·로스팅일을 읽고 레시피를 만들어 PR로 올려요. PR을 머지하면 원두 목록에 나와요. 사진은 읽은 뒤 지워요.</p>
     <form class="form" id="af">
-      <label for="urls">상품 링크</label>
-      <textarea id="urls" rows="4" autocapitalize="off" spellcheck="false" placeholder="https://smartstore.naver.com/…&#10;한 줄에 하나씩"></textarea>
+      <label for="bean">어느 원두</label>
+      <select id="bean"><option value="">새 원두</option></select>
+      <p class="help">이미 저장한 원두에 상품 링크나 사진을 더 보낼 때 고르세요.</p>
+      <label for="urls">상품 링크 (없으면 비워 두기)</label>
+      <textarea id="urls" rows="3" autocapitalize="off" spellcheck="false" placeholder="https://smartstore.naver.com/…&#10;한 줄에 하나씩"></textarea>
+      <label for="photos">봉투·원두카드 사진 (${PHOTO_LIMIT}장까지)</label>
+      <input id="photos" type="file" accept="image/*" multiple>
+      <div class="thumbs" id="thumbs"></div>
       <label for="roast">로스팅일 (알면)</label>
       <input id="roast" type="date">
       <label for="memo">메모</label>
       <input id="memo" placeholder="예: 아이스만, 500g 샀어요">
-      <div class="row"><button class="btn" type="submit">요청 보내기</button></div>
+      <div class="row"><button class="btn" type="submit" id="send">요청 보내기</button></div>
     </form>
     <div id="amsg" aria-live="polite"></div>`;
+  const msg = (html, ok) => { $('amsg').innerHTML = `<p class="msg${ok ? ' ok' : ''}">${html}</p>`; };
+  (async () => {
+    if (!state.tree) return;
+    try {
+      const rows = rowsOf(await readFile('beans/INDEX.md'));
+      $('bean').insertAdjacentHTML('beforeend', rows.map((r) => {
+        const f = fileOf(r['파일'] || '');
+        return f ? `<option value="${esc(f)}">${esc(plain(`${r['로스터리'] || ''} · ${r['원두'] || ''}`))}</option>` : '';
+      }).join(''));
+      $('bean').value = target;
+    } catch { /* 목록 없이 새 원두만 */ }
+  })();
+  const clearPreviews = () => {
+    for (const img of $('thumbs').querySelectorAll('img')) URL.revokeObjectURL(img.src);
+    $('thumbs').innerHTML = '';
+  };
+  $('photos').addEventListener('change', () => {
+    clearPreviews();
+    $('thumbs').innerHTML = [...$('photos').files].slice(0, PHOTO_LIMIT).map((f) => `<img alt="" src="${URL.createObjectURL(f)}">`).join('');
+    for (const img of $('thumbs').querySelectorAll('img')) img.addEventListener('load', () => URL.revokeObjectURL(img.src), { once: true });
+  });
+
+  let confirmed = false, busy = false;
   $('af').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const links = [...new Set(($('urls').value.match(/https?:\/\/[^\s<>"']+/g) || []).map(cleanLink))];
-    if (!links.length) { $('amsg').innerHTML = '<p class="msg">상품 링크(https://…)를 넣어 주세요.</p>'; return; }
-    const { title, body } = requestOf(links, $('roast').value, $('memo').value.trim());
-    const form = `https://github.com/${repo}/issues/new?` + new URLSearchParams({ template: 'bean-request.yml', title, urls: links.join('\n'), roast: $('roast').value, memo: $('memo').value.trim() });
-    const fallback = (why) => {
-      $('amsg').innerHTML = `<p class="msg">${esc(why)} GitHub 화면에서 <b>Create</b>를 눌러 주세요.<br><a class="btn" href="${esc(form)}" target="_blank" rel="noopener noreferrer">GitHub에서 요청 보내기</a></p>`;
-    };
-    if (localBase || !cfg().token) return fallback('이 화면에서는 바로 보낼 수 없어요.');
-    $('amsg').innerHTML = '<p class="msg">보내는 중…</p>';
+    if (busy) return;
+    const links = linksIn($('urls').value);
+    const files = [...$('photos').files];
+    const req = { links, photos: files.length, roast: $('roast').value, bean: $('bean').value, memo: $('memo').value.trim() };
+    if (!links.length && !files.length && !(req.bean && (req.roast || req.memo))) return msg('상품 링크나 사진을 넣어 주세요.');
+    if (files.length > PHOTO_LIMIT) return msg(`사진은 ${PHOTO_LIMIT}장까지 보낼 수 있어요.`);
+    if (files.length && (localBase || !cfg().token)) return msg('사진은 이 화면에서 바로 보내야 해요. ⚙ 설정에서 토큰을 넣어 주세요.');
+    busy = true;
+    $('send').disabled = true;
     try {
-      const issue = await gh(`/repos/${repo}/issues`, { title, body, labels: [REQUEST_LABEL] });
+      if (!confirmed && links.length) {
+        msg('같은 원두가 이미 있는지 보는 중…');
+        const dups = await dupsOf(links, req.bean);
+        if (dups.length) {
+          confirmed = true;
+          return msg(`${dups.join('<br>')}<br>그래도 보내려면 <b>요청 보내기</b>를 한 번 더 눌러 주세요. 있는 원두에 붙이려면 위에서 그 원두를 고르세요.`);
+        }
+      }
+      const { title, body } = requestOf(req);
+      let issue;
+      try {
+        msg('보내는 중…');
+        issue = await gh(`/repos/${repo}/issues`, { title, body, labels: [REQUEST_LABEL] });
+      } catch (err) {
+        if (!(err instanceof HttpError && [401, 403, 404, 422].includes(err.status))) return msg(esc(errText(err)));
+        if (files.length) return msg('토큰이 읽기 전용이라 사진을 보낼 수 없어요. ⚙ 설정의 안내대로 토큰에 <b>Issues: Read and write</b> 권한을 더 주세요.');
+        const form = `https://github.com/${repo}/issues/new?` + new URLSearchParams({ template: 'bean-request.yml', title, urls: links.join('\n'), roast: req.roast, bean: req.bean, memo: req.memo });
+        return msg(`토큰이 읽기 전용이라 여기서 바로 보낼 수 없어요. GitHub 화면에서 <b>Create</b>를 눌러 주세요.<br><a class="btn" href="${esc(form)}" target="_blank" rel="noopener noreferrer">GitHub에서 요청 보내기</a>`);
+      }
+      const commentIds = [];
+      for (let k = 0; k < files.length; k++) {
+        msg(`사진 ${k + 1}/${files.length} 올리는 중…`);
+        try {
+          const parts = photoComments(`photo-${k + 1}.jpg`, await photoData(files[k]));
+          for (const c of parts) {
+            const comment = await gh(`/repos/${repo}/issues/${issue.number}/comments`, { body: c });
+            commentIds.push(comment.id);
+          }
+        } catch (err) {
+          let cleanupFailed = false;
+          for (const id of commentIds) {
+            try { await gh(`/repos/${repo}/issues/comments/${id}`, undefined, 'DELETE'); } catch { cleanupFailed = true; }
+          }
+          try { await gh(`/repos/${repo}/issues/${issue.number}`, { state: 'closed', state_reason: 'not_planned' }, 'PATCH'); } catch { cleanupFailed = true; }
+          return msg(cleanupFailed
+            ? `#${issue.number}에 사진 일부가 남았어요. Claude Code에서 '원두 요청 사진 정리해줘'라고 하면 지워요.`
+            : `사진을 올리지 못해 요청 #${issue.number}을 닫았어요. 다시 보내 주세요.`);
+        }
+      }
       $('af').reset();
-      $('amsg').innerHTML = `<p class="msg ok">요청을 보냈어요. ${aTag({ url: issue.html_url, ext: true }, `#${issue.number} 보기`)}<br>Claude Code에서 "원두 요청 처리해줘"라고 하면 돼요.</p>`;
-    } catch (err) {
-      if (err instanceof HttpError && [401, 403, 404, 422].includes(err.status)) fallback('토큰이 읽기 전용이라 여기서 바로 보낼 수 없어요.');
-      else $('amsg').innerHTML = `<p class="msg">${esc(errText(err))}</p>`;
+      clearPreviews();
+      confirmed = false;
+      msg(`요청을 보냈어요. ${aTag({ url: issue.html_url, ext: true }, `#${issue.number} 보기`)}<br>Claude Code에서 "원두 요청 처리해줘"라고 하면 돼요.`, true);
+    } finally {
+      busy = false;
+      $('send').disabled = false;
     }
   });
+  for (const id of ['urls', 'bean']) $(id).addEventListener('input', () => { confirmed = false; });
 }
 
 function route() {
@@ -626,7 +754,7 @@ function route() {
   if (kind === 'docs') return showDocs();
   if (kind === 'doc' && arg) return showDoc(arg);
   if (kind === 'settings') return showSettings();
-  if (kind === 'add') return showAdd();
+  if (kind === 'add') return showAdd(arg);
   return showBeans();
 }
 
