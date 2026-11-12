@@ -126,6 +126,8 @@ async function readFile(path) {
 // ---------- 상태와 동기화 ----------
 
 const state = { tree: load('tree'), syncing: false, offline: false, error: null };
+// route()가 화면을 바꿀 때마다 올린다. 파일을 기다리는 사이 다른 화면으로 옮겼으면 늦게 온 결과는 버린다.
+let screen = 0;
 
 function setStatus() {
   const s = $('status');
@@ -375,7 +377,9 @@ async function showBeans() {
   if (needSetup()) return;
   if (!state.tree) { view.innerHTML = loading(); return; }
   let rows = [];
-  try { rows = rowsOf(await readFile('beans/INDEX.md')); } catch (e) { view.innerHTML = empty('원두 색인을 못 읽었어요', esc(errText(e))); return; }
+  const seq = screen;
+  try { rows = rowsOf(await readFile('beans/INDEX.md')); } catch (e) { if (seq === screen) view.innerHTML = empty('원두 색인을 못 읽었어요', esc(errText(e))); return; }
+  if (seq !== screen) return;
   const listed = new Set(rows.map((r) => fileOf(r['파일'] || '')).filter(Boolean));
   for (const f of state.tree.files) {
     const name = f.path.slice(6);
@@ -445,7 +449,9 @@ async function showBean(name) {
   if (!state.tree) { view.innerHTML = loading(); return; }
   const path = `beans/${name}`;
   let text;
-  try { text = await readFile(path); } catch (e) { view.innerHTML = `<a class="back" href="#/">← 원두</a>${empty('원두 파일을 못 읽었어요', esc(errText(e)))}`; return; }
+  const seq = screen;
+  try { text = await readFile(path); } catch (e) { if (seq === screen) view.innerHTML = `<a class="back" href="#/">← 원두</a>${empty('원두 파일을 못 읽었어요', esc(errText(e)))}`; return; }
+  if (seq !== screen) return;
   const bean = parseBeanText(text);
   const byId = new Map(bean.recipes.map((r) => [r.id, r]));
   const age = roastAge(text);
@@ -478,7 +484,9 @@ async function showWish() {
   if (needSetup()) return;
   if (!state.tree) { view.innerHTML = loading(); return; }
   let rows = [];
-  try { rows = rowsOf(await readFile('beans/WISHLIST.md')); } catch (e) { view.innerHTML = empty('구매 후보를 못 읽었어요', esc(errText(e))); return; }
+  const seq = screen;
+  try { rows = rowsOf(await readFile('beans/WISHLIST.md')); } catch (e) { if (seq === screen) view.innerHTML = empty('구매 후보를 못 읽었어요', esc(errText(e))); return; }
+  if (seq !== screen) return;
   if (!rows.length) {
     view.innerHTML = empty('아직 저장한 후보가 없어요', 'Aside에서 원두를 찾은 뒤 "1번 저장해"라고 하면 여기에 보여요.');
     return;
@@ -526,7 +534,9 @@ async function showDoc(path) {
   if (!state.tree) { view.innerHTML = loading(); return; }
   view.innerHTML = `<a class="back" href="#/docs">← 가이드</a>${empty('불러오는 중', '')}`;
   let text;
-  try { text = await readFile(path); } catch (e) { view.innerHTML = `<a class="back" href="#/docs">← 가이드</a>${empty('문서를 못 읽었어요', esc(errText(e)))}`; return; }
+  const seq = screen;
+  try { text = await readFile(path); } catch (e) { if (seq === screen) view.innerHTML = `<a class="back" href="#/docs">← 가이드</a>${empty('문서를 못 읽었어요', esc(errText(e)))}`; return; }
+  if (seq !== screen) return;
   const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
   view.innerHTML = `<a class="back" href="#/docs">← 가이드</a><article class="doc">${mdSections(text, dir, () => false)}</article>`;
   scrollTo(0, 0);
@@ -769,6 +779,7 @@ function showAdd(target = '') {
 }
 
 function route() {
+  screen++;
   const h = location.hash.replace(/^#\/?/, '');
   const [kind, ...rest] = h.split('/');
   const arg = decodeURIComponent(rest.join('/'));
