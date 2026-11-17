@@ -50,12 +50,31 @@ nav.tabs a[aria-current=page]{color:var(--fg);border-bottom-color:var(--acc)}
 .qcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin:0 0 16px}
 .qcard{display:grid;grid-template-columns:auto 1fr;gap:0 10px;align-items:center;text-align:left;font:inherit;color:var(--fg);background:var(--card);border:2px solid var(--line);border-radius:14px;padding:10px 12px;min-height:64px;cursor:pointer;touch-action:manipulation}
 .qcard:active{border-color:var(--acc)}
+.recipe-choice{min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+.recipe-choice .qcard{width:100%;border:0;border-radius:0}
+.evidence-label{grid-column:2;font-size:12px;font-weight:600;color:var(--mut)}
+.recipe-evidence{border-top:1px solid var(--line);padding:0 12px}
+.recipe-evidence summary{padding:10px 0;min-height:44px;font-size:13px;color:var(--acc);cursor:pointer}
+.recipe-evidence p,.recipe-evidence li{font-size:13px}
+.bag-choice{margin:12px 0 16px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.bag-choice label{display:block;font-size:14px;font-weight:700;margin-bottom:6px}
+.bag-choice select{width:100%;min-height:44px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;font:inherit;padding:8px}
+.bag-choice summary{min-height:44px;padding:10px 0;cursor:pointer;font-size:14px}
+.bag-choice>a{font-size:13px}
 .qcard .g{grid-row:span 2;font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .qcard .t{font-weight:700;font-size:15px}
 .qcard .s{color:var(--mut);font-size:13px}
 .qhead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 0 8px}
 .qhead h2{font-size:17px;margin:0}
 .qhead span{color:var(--mut);font-size:13px}
+.recipe-filters{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
+.recipe-filters label{font-size:13px;font-weight:700;color:var(--mut)}
+.recipe-filters select{display:block;width:100%;min-height:44px;margin-top:4px;padding:8px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:15px;background:var(--card);color:var(--fg)}
+.filter-result{font-size:13px;color:var(--mut);margin:8px 0}
+.requests{margin-top:28px;border-top:1px solid var(--line);padding-top:18px}
+.request-list{list-style:none;padding:0;margin:8px 0}
+.request-list li{padding:12px 0;border-bottom:1px solid var(--line);font-size:14px}
+.request-note{display:block;color:var(--mut);font-size:13px;margin-top:4px}
 .doc h1{font-size:21px;line-height:1.3;margin:4px 0 8px}
 .doc h2{font-size:18px;margin:0}
 .doc h3{font-size:16px;margin:18px 0 6px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}

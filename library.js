@@ -4,6 +4,7 @@
 
 import { tablesIn, splitRow, clean, parseBeanText, NON_BEAN, roastAge, saleStatus, zp6Of } from './brew-core.js';
 import { registerSW } from './pwa.js';
+import { recipeEvidence, bagHistory, bagAge } from './bean-details.js';
 
 const KEY = 'coffee-lib:';
 const DEFAULT_REPO = 'ipadorusa/my-coffe-recipe';
@@ -113,10 +114,10 @@ async function readFile(path) {
   if (hit != null) return hit;
   if (!pending.has(f.sha)) {
     pending.set(f.sha, (async () => {
-      const { repo } = cfg();
+      const { repo, token } = cfg();
       const b = await gh(`/repos/${repo}/git/blobs/${f.sha}`);
       const text = b.encoding === 'base64' ? b64ToText(b.content) : b.content;
-      save(`blob:${f.sha}`, text);
+      if (cfg().repo === repo && cfg().token === token) save(`blob:${f.sha}`, text);
       return text;
     })().finally(() => pending.delete(f.sha)));
   }
@@ -125,7 +126,8 @@ async function readFile(path) {
 
 // ---------- 상태와 동기화 ----------
 
-const state = { tree: load('tree'), syncing: false, offline: false, error: null };
+const state = { tree: load('tree'), syncing: false, caching: false, error: null };
+let prefetchRun = 0;
 // route()가 화면을 바꿀 때마다 올린다. 파일을 기다리는 사이 다른 화면으로 옮겼으면 늦게 온 결과는 버린다.
 let screen = 0;
 
@@ -138,10 +140,21 @@ function setStatus() {
   const when = at ? at.toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   if (state.error) {
     s.className = 'status warn';
-    s.textContent = at ? `${state.error} ${when}에 받은 내용을 보여줘요.` : state.error;
+    s.textContent = (at ? `${state.error} ${when}에 받은 내용을 보여줘요.` : state.error) + offlineStatus();
     return;
   }
-  s.textContent = at ? `GitHub ${cfg().branch} · ${when} 기준` : '';
+  s.textContent = (at ? `GitHub ${cfg().branch} · ${when} 기준` : '') + offlineStatus();
+}
+
+function offlineStatus() {
+  if (!state.tree) return '';
+  const total = state.tree.files.length;
+  const stored = state.tree.files.filter((f) => typeof load(`blob:${f.sha}`) === 'string').length;
+  const treeStored = load('tree')?.sha === state.tree.sha;
+  if (state.caching) return ` · 오프라인 자료 저장 중 ${stored}/${total}`;
+  return stored === total && total > 0 && treeStored
+    ? ' · 오프라인 자료 모두 저장됨'
+    : ` · 오프라인 자료 일부 저장됨 ${stored}/${total}${treeStored ? '' : ' (목록 저장 안 됨)'}`;
 }
 
 async function sync({ force = false } = {}) {
@@ -173,8 +186,19 @@ async function sync({ force = false } = {}) {
 // 오프라인에서도 열리게 원두 파일을 먼저, 가이드를 다음으로 모두 받아 둔다. 바뀐 파일만 새로 받는다.
 async function prefetch() {
   if (localBase || !state.tree) return;
-  const want = state.tree.files.map((f) => f.path).sort((a, b) => b.startsWith('beans/') - a.startsWith('beans/'));
-  for (const p of want) { try { await readFile(p); } catch { break; } }
+  const run = ++prefetchRun, tree = state.tree;
+  const want = tree.files.map((f) => f.path).sort((a, b) => b.startsWith('beans/') - a.startsWith('beans/'));
+  state.caching = true; setStatus();
+  try {
+    for (const p of want) {
+      if (run !== prefetchRun || state.tree !== tree) return;
+      try { await readFile(p); } catch { /* 다른 자료는 계속 저장한다 */ }
+      if (run !== prefetchRun || state.tree !== tree) return;
+      setStatus();
+    }
+  } finally {
+    if (run === prefetchRun) { state.caching = false; setStatus(); }
+  }
 }
 
 // ---------- 마크다운 (HTML은 모두 이스케이프한다) ----------
@@ -332,9 +356,15 @@ const ageBadge = (a) => `<span class="badge">로스팅 후 ${a.days}일${a.guess
 
 // 파일 버전(sha)마다 한 번만 읽는다. 받아 둔 파일은 이 기기 저장소에서 바로 나온다.
 const ages = new Map();
+function selectedBag(text, file) {
+  const history = bagHistory(text);
+  const id = load(`bag:${cfg().repo}:${file}`, history.current);
+  return { ...history, bag: history.bags.find((b) => b.id === id) || history.bags.find((b) => b.id === history.current) };
+}
+
 function ageOf(file) {
-  const k = `${file}@${state.tree?.files.find((f) => f.path === `beans/${file}`)?.sha || ''}`;
-  if (!ages.has(k)) ages.set(k, readFile(`beans/${file}`).then(roastAge, () => null));
+  const k = `${cfg().repo}/${file}@${state.tree?.files.find((f) => f.path === `beans/${file}`)?.sha || ''}@${load(`bag:${cfg().repo}:${file}`, '')}@${new Date().toLocaleDateString('sv-SE')}`;
+  if (!ages.has(k)) ages.set(k, readFile(`beans/${file}`).then((text) => { const h = selectedBag(text, file); return h.errors.length ? null : bagAge(h.bag); }, () => null));
   return ages.get(k);
 }
 
@@ -454,19 +484,63 @@ async function showBean(name) {
   if (seq !== screen) return;
   const bean = parseBeanText(text);
   const byId = new Map(bean.recipes.map((r) => [r.id, r]));
-  const age = roastAge(text);
+  const evidence = recipeEvidence(text);
+  const history = selectedBag(text, name);
+  const age = history.errors.length ? null : bagAge(history.bag);
   const sale = saleStatus(text);
   const ageMsg = age ? `<p class="msg"><b>로스팅 후 ${age.days}일${age.guess ? ' (추정)' : ''}</b> · 로스팅일 ${esc(age.date)} · ${esc(age.range)}: ${esc(age.tip)}. ${aTag({ url: `#/doc/${encodeURIComponent(AGE_GUIDE)}` }, '경과일별 조정표')}</p>` : '';
   const saleMsg = sale ? `<p class="msg"><b>${esc(sale.status)}</b> · ${esc(sale.date)} 확인</p>` : '';
-  const quick = ageMsg + saleMsg + (bean.recipes.length ? `
+  const bags = history.start < 0 ? '' : `<section class="bag-choice" aria-label="마시는 봉투">
+    ${history.errors.length ? `<p class="msg">봉투 이력을 읽지 못했어요. ${esc(history.errors.join(' '))}</p>` : `<label for="bagSelect">지금 마시는 봉투</label><select id="bagSelect">${history.bags.map((b) => `<option value="${esc(b.id)}"${b.id === history.bag.id ? ' selected' : ''}>${esc(b.id)} · 로스팅 ${esc(b.roast)}${b.weight !== '-' ? ` · ${esc(b.weight)}g` : ''}</option>`).join('')}</select><p class="filter-result">이 기기에서 고른 봉투의 로스팅일로 경과일을 계산해요.</p>`}
+    <details><summary>봉투 이력 ${history.bags.length}개 보기</summary><div class="tw"><table><thead><tr>${['봉투', '구매일', '로스팅일', '중량(g)', '가격(원)', '구매처', '메모'].map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${history.bags.map((b) => `<tr>${['id', 'purchased', 'roast', 'weight', 'price', 'shop', 'note'].map((k) => `<td>${esc(b[k] || '-')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>
+    <a href="#/add/${encodeURIComponent(name)}">이 원두 재구매·정보 보완 요청 →</a>
+  </section>`;
+  const quick = bags + ageMsg + saleMsg + (bean.recipes.length ? `
     <div class="qhead"><h2>브루 카드</h2><span>눌러서 폰용 카드로 열어요</span></div>
+    <div class="recipe-filters" role="group" aria-label="브루 카드 필터">
+      <label>드리퍼<select id="recipeDripper"><option value="">전체 드리퍼</option>${[...new Set(bean.recipes.map((r) => r.d))].map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('')}</select></label>
+      <label>음료<select id="recipeType"><option value="">HOT · ICE 전체</option><option value="HOT">HOT</option><option value="ICE">ICE</option></select></label>
+    </div>
+    <p class="filter-result" id="recipeCount" aria-live="polite"></p>
     <div class="qcards">${bean.recipes.map((r) => `
+      <div class="recipe-choice">
       <button type="button" class="qcard" data-id="${esc(r.id)}">
         <span class="g">${esc(String(r.g))}g</span>
         <span class="t">${esc(r.d)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
         <span class="s">${esc(r.id)} · ${esc(grind(r.c, r.z))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
-      </button>`).join('')}</div>` : '');
-  view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(compactSources(withoutHeaderNote(text)), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
+        <span class="evidence-label">${esc(evidence[r.id]?.label || '근거 구분 미기재')}</span>
+      </button>
+      <details class="recipe-evidence"><summary>근거 보기</summary>${md([evidence[r.id]?.basis || '레시피에 근거 구분이 적혀 있지 않아요.', evidence[r.id]?.reason || '', ...(evidence[r.id]?.sources || [])].join('\n\n'), 'beans')}</details>
+      </div>`).join('')}</div>` : '');
+  const bodyText = history.start < 0 ? text : text.split(/\r?\n/).filter((_, k) => k < history.start || k >= history.end).join('\n');
+  view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(compactSources(withoutHeaderNote(bodyText)), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
+  if (history.start >= 0 && !history.errors.length) $('bagSelect').addEventListener('change', async (e) => {
+    save(`bag:${cfg().repo}:${name}`, e.target.value);
+    await showBean(name);
+    if (seq === screen) $('bagSelect')?.focus();
+  });
+  if (bean.recipes.length) {
+    const dripper = $('recipeDripper'), type = $('recipeType');
+    const pref = load('recipe-filter', {});
+    dripper.value = bean.recipes.some((r) => r.d === pref?.dripper) ? pref.dripper : '';
+    type.value = ['HOT', 'ICE'].includes(pref?.type) ? pref.type : '';
+    const filter = () => {
+      let count = 0;
+      for (const b of view.querySelectorAll('.qcard')) {
+        const r = byId.get(b.dataset.id);
+        b.hidden = !!((dripper.value && r.d !== dripper.value) || (type.value && r.t !== type.value));
+        const choice = b.closest('.recipe-choice');
+        if (choice) choice.hidden = b.hidden;
+        if (!b.hidden) count++;
+      }
+      $('recipeCount').textContent = count ? `${bean.recipes.length}개 중 ${count}개를 보여줘요.` : '이 조건의 레시피가 없어요. 필터를 바꿔 주세요.';
+    };
+    for (const input of [dripper, type]) input.addEventListener('change', () => {
+      save('recipe-filter', { dripper: dripper.value, type: type.value });
+      filter();
+    });
+    filter();
+  }
   for (const b of view.querySelectorAll('.qcard')) b.addEventListener('click', () => openCard(byId.get(b.dataset.id)));
   for (const h of view.querySelectorAll('.doc h3')) {
     const id = (/^(\d+-\d+)\./.exec(h.textContent.trim()) || [])[1];
@@ -488,7 +562,7 @@ async function showWish() {
   try { rows = rowsOf(await readFile('beans/WISHLIST.md')); } catch (e) { if (seq === screen) view.innerHTML = empty('구매 후보를 못 읽었어요', esc(errText(e))); return; }
   if (seq !== screen) return;
   if (!rows.length) {
-    view.innerHTML = empty('아직 저장한 후보가 없어요', 'Aside에서 원두를 찾은 뒤 "1번 저장해"라고 하면 여기에 보여요.');
+    view.innerHTML = empty('아직 저장한 후보가 없어요', 'Aside나 Claude Code에서 원두를 찾은 뒤 "1번 저장해"라고 하면 여기에 보여요.');
     return;
   }
   rows.reverse();
@@ -496,11 +570,15 @@ async function showWish() {
     const link = /https?:\/\/[^\s)]+/.exec(r['링크'] || '');
     const st = r['상태'] || '';
     const bought = fileOf(st);
-    const meta = [r['농장/생산자'], r['품종'], r['가공'], r['구분']].filter((x) => x && x !== '미확인').map(plain).join(' · ');
+    const shown = (x) => x && !/^(미확인|미표기)/.test(x);
+    const meta = [r['농장/생산자'], r['품종'], r['가공'], r['구분']].filter(shown).map(plain).join(' · ');
+    // 로스팅·컵노트 칸은 2026-11-17부터 있다. 예전 행에는 없다.
+    const taste = [shown(r['로스팅']) && `로스팅 ${plain(r['로스팅'])}`, shown(r['컵노트']) && `컵노트 ${plain(r['컵노트'])}`].filter(Boolean).join(' · ');
     return `<li><div class="bean">
       <span class="ro">${esc(plain(r['로스터리'] || ''))}</span>
       <span class="nm">${esc(plain(r['상품명'] || ''))}</span>
       ${meta ? `<p class="meta">${esc(meta)}</p>` : ''}
+      ${taste ? `<p class="meta">${esc(taste)}</p>` : ''}
       <p class="meta">${esc(plain(r['가격 · 중량'] || ''))}</p>
       <span class="foot"><span>${bought ? `<a href="#/bean/${encodeURIComponent(bought)}">구매함 → 레시피</a>` : `<span class="badge${/제외/.test(st) ? '' : ' ok'}">${esc(st || '후보')}</span>`}</span>
       <span>${link ? aTag({ url: link[0], ext: true }, '상품 페이지') + ' · ' : ''}${esc(r['확인일 · 판매 상태'] || r['저장일'] || '')}</span></span>
@@ -551,7 +629,8 @@ function showSettings() {
     <ol class="steps">
       <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub 토큰 만들기 페이지</a>를 열어요. (Fine-grained token)</li>
       <li><b>Repository access</b>: Only select repositories → <code>${esc(c.repo.split('/')[1] || c.repo)}</code></li>
-      <li><b>Permissions → Repository permissions → Contents</b>: Read-only. 다른 권한은 주지 않아요. (추가 탭에서 원두 요청을 버튼 한 번으로 보내고 봉투 사진을 올리려면 <b>Issues</b>: Read and write도 줘요. 링크만이면 안 줘도 GitHub 화면을 거쳐 보낼 수 있어요.)</li>
+      <li><b>Permissions → Repository permissions → Contents</b>: Read-only. 원두·가이드를 읽을 때는 이 권한만 있으면 돼요. (추가 탭에서 원두 요청을 버튼 한 번으로 보내고 봉투 사진을 올리려면 <b>Issues</b>: Read and write도 줘요. 링크만이면 안 줘도 GitHub 화면을 거쳐 보낼 수 있어요.)</li>
+      <li>추가 탭에서 요청 처리 상태도 보려면 <b>Issues: Read-only</b> 이상, PR 머지 여부까지 확인하려면 <b>Pull requests: Read-only</b>를 더 주세요.</li>
       <li>만든 토큰(<code>github_pat_…</code>)을 아래에 붙여 넣어요.</li>
     </ol>
     <form class="form" id="f">
@@ -588,6 +667,7 @@ function showSettings() {
     }
   });
   $('forget')?.addEventListener('click', () => {
+    prefetchRun++; state.caching = false;
     drop('cfg'); drop('tree'); drop('q');
     for (const k of cacheKeys()) { try { localStorage.removeItem(k); } catch { /* 없음 */ } }
     state.tree = null; state.error = null; setStatus();
@@ -612,15 +692,74 @@ const cleanLink = (u) => {
 const linkKey = (u) => { const m = SS_LINK.exec(u); return m ? `ss:${m[1]}/${m[2]}` : cleanLink(u); };
 const linksIn = (text) => [...new Set((text.match(/https?:\/\/[^\s<>"']+/g) || []).map(cleanLink))];
 
-function requestOf({ links, photos, roast, bean, memo }) {
+function requestStatusOf(issue, pr) {
+  if (pr?.merged_at && pr.base?.ref === cfg().branch) return '반영 완료';
+  if (issue.state === 'closed') return '닫힘';
+  if (pr?.state === 'open') return 'PR 열림';
+  if (pr?.state === 'closed') return 'PR 닫힘 · 미반영';
+  return issue.labels?.some((l) => (l.name || l) === '처리 중') ? '처리 중' : '접수';
+}
+
+// bean-pr.sh가 남긴 "PR: ..." 댓글의 같은 저장소 PR만 확인한다.
+async function requestPR(issue, repo) {
+  if (!issue.comments) return null;
+  let number = null;
+  for (let page = 1; ; page++) {
+    const comments = await gh(`/repos/${repo}/issues/${issue.number}/comments?per_page=100&page=${page}`);
+    for (const c of comments) {
+      for (const m of (c.body || '').matchAll(/PR:\s*(https:\/\/github\.com\/[^\s<>]+)/g)) {
+        try {
+          const u = new URL(m[1]);
+          const prefix = `/${repo}/pull/`;
+          if (u.pathname.startsWith(prefix) && /^\d+$/.test(u.pathname.slice(prefix.length))) number = u.pathname.slice(prefix.length);
+        } catch { /* PR 링크가 아니면 건너뛴다 */ }
+      }
+    }
+    if (comments.length < 100) break;
+  }
+  return number ? gh(`/repos/${repo}/pulls/${number}`) : null;
+}
+
+const requestRuns = new WeakMap();
+async function showRequests(panel, repo) {
+  if (!panel.isConnected) return;
+  const run = (requestRuns.get(panel) || 0) + 1;
+  requestRuns.set(panel, run);
+  if (localBase || !cfg().token) {
+    panel.textContent = 'GitHub을 연결하면 최근 원두 요청의 처리 상태를 볼 수 있어요.';
+    return;
+  }
+  panel.textContent = '최근 요청을 확인하는 중…';
+  const current = () => panel.isConnected && cfg().repo === repo && requestRuns.get(panel) === run;
+  try {
+    const issues = await gh(`/repos/${repo}/issues?labels=${encodeURIComponent(REQUEST_LABEL)}&state=all&sort=created&direction=desc&per_page=10`);
+    if (!current()) return;
+    const rows = [];
+    for (const issue of issues.filter((i) => !i.pull_request)) {
+      let pr = null, unknown = false;
+      try { pr = await requestPR(issue, repo); } catch { unknown = true; }
+      if (!current()) return;
+      const status = requestStatusOf(issue, pr);
+      rows.push(`<li><span class="badge${status === '반영 완료' ? ' ok' : ''}">${esc(status)}</span> ${aTag({ url: issue.html_url, ext: true }, `#${issue.number} ${esc(issue.title)}`)}${pr ? ` · ${aTag({ url: pr.html_url, ext: true }, 'PR 보기')}` : ''}${unknown ? '<span class="request-note">PR 상태를 확인하지 못했어요. 연결과 토큰의 Pull requests 읽기 권한을 확인해 주세요.</span>' : ''}</li>`);
+    }
+    panel.innerHTML = rows.length ? `<ul class="request-list">${rows.join('')}</ul>` : '<p>아직 보낸 요청이 없어요.</p>';
+  } catch (e) {
+    if (current()) panel.textContent = e instanceof HttpError && [401, 403, 404].includes(e.status)
+      ? '요청을 읽을 수 없어요. 토큰에 Issues 읽기 권한이 있는지 확인해 주세요.'
+      : '요청 상태를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 확인해 주세요.';
+  }
+}
+
+function requestOf({ links, photos, roast, bean, memo, bagAction = '', purchased = '', weight = '', price = '', shop = '', bagId = '' }) {
   const host = (u) => { try { return new URL(u).pathname.split('/')[1] || new URL(u).hostname; } catch { return u; } };
   const what = links.length ? `${host(links[0])}${links.length > 1 ? ` 외 ${links.length - 1}개` : ''}` : `사진 ${photos}장`;
-  const title = bean ? `원두 요청: ${bean.replace(/\.md$/, '')} 보완` : `원두 요청: ${what}`;
+  const title = bean ? `원두 요청: ${bean.replace(/\.md$/, '')} ${bagAction === 'add' ? '재구매' : '보완'}` : `원두 요청: ${what}`;
   const sec = (h, v) => `### ${h}\n\n${v || '_No response_'}`;
   return {
     title,
     body: [sec('상품 링크', links.join('\n')), sec('사진', photos ? `${photos}장 (댓글로 붙임. Claude Code가 읽은 뒤 지워요)` : ''),
-      sec('로스팅일', roast), sec('기존 원두', bean), sec('메모', memo)].join('\n\n'),
+      sec('로스팅일', roast), sec('기존 원두', bean), sec('메모', memo),
+      ...(bean || purchased || weight || price || shop ? [sec('봉투 작업', bagAction === 'add' ? '재구매' : '정보 보완'), sec('봉투 ID', bagAction === 'add' ? '' : bagId), sec('구매일', purchased), sec('중량(g)', weight), sec('가격(원)', price), sec('구매처', shop)] : [])].join('\n\n'),
   };
 }
 
@@ -680,6 +819,9 @@ function showAdd(target = '') {
       <label for="bean">어느 원두</label>
       <select id="bean"><option value="">새 원두</option></select>
       <p class="help">이미 저장한 원두에 상품 링크나 사진을 더 보낼 때 고르세요.</p>
+      <label for="bagAction">기존 원두 작업</label>
+      <select id="bagAction"><option value="update">정보 보완</option><option value="add">재구매 · 새 봉투 추가</option></select>
+      <p class="help">재구매는 위에서 기존 원두를 골라 주세요. 이전 봉투와 레시피는 보존해요.</p>
       <label for="urls">상품 링크 (없으면 비워 두기)</label>
       <textarea id="urls" rows="3" autocapitalize="off" spellcheck="false" placeholder="https://smartstore.naver.com/…&#10;한 줄에 하나씩"></textarea>
       <label for="photos">봉투·원두카드 사진 (${PHOTO_LIMIT}장까지)</label>
@@ -687,26 +829,46 @@ function showAdd(target = '') {
       <div class="thumbs" id="thumbs"></div>
       <label for="roast">로스팅일 (알면)</label>
       <input id="roast" type="date">
+      <details class="bag-choice"><summary>구매 정보 (선택)</summary>
+        <label for="purchased">구매일</label><input id="purchased" type="date">
+        <label for="weight">중량(g)</label><input id="weight" type="number" min="0.1" step="any" inputmode="decimal">
+        <label for="price">가격(원)</label><input id="price" type="number" min="0" step="1" inputmode="numeric">
+        <label for="shop">구매처</label><input id="shop" placeholder="예: 로스터리 온라인몰">
+      </details>
       <label for="memo">메모</label>
       <input id="memo" placeholder="예: 아이스만, 500g 샀어요">
       <div class="row"><button class="btn" type="submit" id="send">요청 보내기</button></div>
     </form>
-    <div id="amsg" aria-live="polite"></div>`;
-  const msg = (html, ok) => { $('amsg').innerHTML = `<p class="msg${ok ? ' ok' : ''}">${html}</p>`; };
+    <div id="amsg" aria-live="polite"></div>
+    <section class="requests" aria-labelledby="requestHeading">
+      <div class="qhead"><h2 id="requestHeading">최근 원두 요청 10개</h2><button type="button" class="cardbtn" id="refreshRequests">다시 확인</button></div>
+      <div id="requests" aria-live="polite"></div>
+    </section>`;
+  const panel = $('requests'), form = $('af'), message = $('amsg'), send = $('send'), thumbs = $('thumbs'), selectBean = $('bean');
+  const refresh = $('refreshRequests');
+  let refreshing = 0;
+  const refreshRequests = async () => {
+    const run = ++refreshing;
+    refresh.disabled = true;
+    try { await showRequests(panel, repo); } finally { if (run === refreshing) refresh.disabled = false; }
+  };
+  refresh.addEventListener('click', refreshRequests);
+  refreshRequests();
+  const msg = (html, ok) => { message.innerHTML = `<p class="msg${ok ? ' ok' : ''}">${html}</p>`; };
   (async () => {
     if (!state.tree) return;
     try {
       const rows = rowsOf(await readFile('beans/INDEX.md'));
-      $('bean').insertAdjacentHTML('beforeend', rows.map((r) => {
+      selectBean.insertAdjacentHTML('beforeend', rows.map((r) => {
         const f = fileOf(r['파일'] || '');
         return f ? `<option value="${esc(f)}">${esc(plain(`${r['로스터리'] || ''} · ${r['원두'] || ''}`))}</option>` : '';
       }).join(''));
-      $('bean').value = target;
+      selectBean.value = target;
     } catch { /* 목록 없이 새 원두만 */ }
   })();
   const clearPreviews = () => {
-    for (const img of $('thumbs').querySelectorAll('img')) URL.revokeObjectURL(img.src);
-    $('thumbs').innerHTML = '';
+    for (const img of thumbs.querySelectorAll('img')) URL.revokeObjectURL(img.src);
+    thumbs.innerHTML = '';
   };
   $('photos').addEventListener('change', () => {
     clearPreviews();
@@ -720,12 +882,14 @@ function showAdd(target = '') {
     if (busy) return;
     const links = linksIn($('urls').value);
     const files = [...$('photos').files];
-    const req = { links, photos: files.length, roast: $('roast').value, bean: $('bean').value, memo: $('memo').value.trim() };
-    if (!links.length && !files.length && !(req.bean && (req.roast || req.memo))) return msg('상품 링크나 사진을 넣어 주세요.');
+    const req = { links, photos: files.length, roast: $('roast').value, bean: $('bean').value, memo: $('memo').value.trim(), bagAction: $('bagAction').value, purchased: $('purchased').value, weight: $('weight').value, price: $('price').value, shop: $('shop').value.trim() };
+    req.bagId = req.bean ? load(`bag:${repo}:${req.bean}`, '') : '';
+    if (req.bagAction === 'add' && !req.bean) return msg('재구매할 기존 원두를 골라 주세요.');
+    if (!links.length && !files.length && !(req.bean && (req.roast || req.memo || req.bagAction === 'add' || req.purchased || req.weight || req.price || req.shop))) return msg('상품 링크나 사진을 넣어 주세요.');
     if (files.length > PHOTO_LIMIT) return msg(`사진은 ${PHOTO_LIMIT}장까지 보낼 수 있어요.`);
     if (files.length && (localBase || !cfg().token)) return msg('사진은 이 화면에서 바로 보내야 해요. ⚙ 설정에서 토큰을 넣어 주세요.');
     busy = true;
-    $('send').disabled = true;
+    send.disabled = true;
     try {
       if (!confirmed && links.length) {
         msg('같은 원두가 이미 있는지 보는 중…');
@@ -743,7 +907,7 @@ function showAdd(target = '') {
       } catch (err) {
         if (!(err instanceof HttpError && [401, 403, 404, 422].includes(err.status))) return msg(esc(errText(err)));
         if (files.length) return msg('토큰이 읽기 전용이라 사진을 보낼 수 없어요. ⚙ 설정의 안내대로 토큰에 <b>Issues: Read and write</b> 권한을 더 주세요.');
-        const form = `https://github.com/${repo}/issues/new?` + new URLSearchParams({ template: 'bean-request.yml', title, urls: links.join('\n'), roast: req.roast, bean: req.bean, memo: req.memo });
+        const form = `https://github.com/${repo}/issues/new?` + new URLSearchParams({ template: 'bean-request.yml', title, urls: links.join('\n'), roast: req.roast, bean: req.bean, memo: req.memo, kind: req.bagAction === 'add' ? '재구매' : '정보 보완', bagid: req.bagId, purchased: req.purchased, weight: req.weight, price: req.price, shop: req.shop });
         return msg(`토큰이 읽기 전용이라 여기서 바로 보낼 수 없어요. GitHub 화면에서 <b>Create</b>를 눌러 주세요.<br><a class="btn" href="${esc(form)}" target="_blank" rel="noopener noreferrer">GitHub에서 요청 보내기</a>`);
       }
       const commentIds = [];
@@ -766,13 +930,14 @@ function showAdd(target = '') {
             : `사진을 올리지 못해 요청 #${issue.number}을 닫았어요. 다시 보내 주세요.`);
         }
       }
-      $('af').reset();
+      form.reset();
       clearPreviews();
       confirmed = false;
       msg(`요청을 보냈어요. ${aTag({ url: issue.html_url, ext: true }, `#${issue.number} 보기`)}<br>Claude Code에서 "원두 요청 처리해줘"라고 하면 돼요.`, true);
+      if (panel.isConnected) refreshRequests();
     } finally {
       busy = false;
-      $('send').disabled = false;
+      send.disabled = false;
     }
   });
   for (const id of ['urls', 'bean']) $(id).addEventListener('input', () => { confirmed = false; });

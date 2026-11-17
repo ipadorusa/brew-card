@@ -6,6 +6,27 @@ import { registerSW } from './pwa.js';
 const $ = (id) => document.getElementById(id);
 const KEY = 'brewcard.recent';
 const MAX_RECENT = 10;
+const DOSE_KEY = 'brewcard.doses';
+
+function savedDose(hash, original) {
+  if (!num(original) || original <= 0) return original;
+  try {
+    const g = JSON.parse(localStorage.getItem(DOSE_KEY) || '{}')?.[hash]?.g;
+    return num(g) && g >= Math.min(8, original) && g <= Math.max(20, original) ? g : original;
+  } catch { return original; }
+}
+
+function rememberDose(hash, original, g) {
+  if (!hash || !num(original) || original <= 0 || !num(g)) return;
+  try {
+    const stored = JSON.parse(localStorage.getItem(DOSE_KEY) || '{}');
+    const entries = Object.entries(stored && typeof stored === 'object' ? stored : {})
+      .filter(([key, value]) => key !== hash && num(value?.g) && num(value?.at))
+      .sort((a, b) => b[1].at - a[1].at).slice(0, 49);
+    if (g !== original) entries.unshift([hash, { g, at: Date.now() }]);
+    localStorage.setItem(DOSE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch { /* 저장할 수 없어도 카드는 사용할 수 있다 */ }
+}
 
 // ---------- 디코드 (FORMAT.md v1) ----------
 function b64urlBytes(s) {
@@ -51,7 +72,7 @@ function saveRecent(h, o) {
 }
 
 // ---------- 화면 ----------
-let card = null, cur = -1, routeToken = 0;
+let card = null, cur = -1, routeToken = 0, cardHash = '';
 function show(id) { for (const s of ['home', 'err', 'card']) $(s).hidden = s !== id; window.scrollTo(0, 0); }
 
 async function route() {
@@ -73,7 +94,7 @@ async function route() {
   catch (e) { if (token === routeToken) showErr('카드를 읽지 못했어요. 주소가 잘렸을 수 있어요. QR을 다시 스캔해 주세요.'); return; }
   if (token !== routeToken) return;
   saveRecent(h, c.o);
-  openCard(c);
+  openCard(c, h);
 }
 function showErr(msg) { card = null; $('errMsg').textContent = msg; document.title = '브루 카드'; show('err'); }
 
@@ -92,8 +113,8 @@ function renderHome() {
   show('home');
 }
 
-function openCard(c) {
-  card = c; cur = -1; dose = c.o.g;
+function openCard(c, hash) {
+  card = c; cardHash = hash; cur = -1; dose = savedDose(hash, c.o.g);
   const o = c.o;
   document.title = join([o.b, join([o.d, o.t], ' ')], ' · ') || '브루 카드';
   $('hTitle').textContent = join([o.b, o.r], ' · ');
@@ -113,6 +134,7 @@ let dose = null, shown = null;
 function setDose(g) {
   if (!card || !num(g) || g === dose) return;
   dose = g;
+  rememberDose(cardHash, card.o.g, g);
   const k = cur;
   draw();
   mark(k);
