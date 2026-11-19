@@ -159,9 +159,13 @@ function offlineStatus() {
 
 async function sync({ force = false } = {}) {
   if (!localBase && !cfg().token) return;
+  const asked = cfg();
   state.syncing = true; setStatus();
   try {
     const t = await fetchTree();
+    // 요청한 뒤 토큰·저장소·브랜치가 바뀌었거나 연결을 지웠으면 옛 응답은 버린다(지운 비공개 목록이 다시 저장되지 않게).
+    const now = cfg();
+    if (now.token !== asked.token || now.repo !== asked.repo || now.branch !== asked.branch) return;
     const changed = !state.tree || state.tree.sha !== t.sha || force;
     state.tree = { ...t, at: Date.now() };
     state.error = null;
@@ -171,6 +175,7 @@ async function sync({ force = false } = {}) {
       for (const k of cacheKeys()) if (!keep.has(k)) { try { localStorage.removeItem(k); } catch { /* 없음 */ } }
     }
     if (changed && !/^#\/(add|settings)\b/.test(location.hash)) route(); // 입력 중인 폼은 다시 그리지 않는다
+    else if (/^#\/add\b/.test(location.hash)) state.fillBeans?.(); // 추가 화면은 다시 그리지 않고 기존 원두 목록만 채운다
     prefetch();
   } catch (e) {
     state.error = e instanceof HttpError ? e.message : '인터넷에 연결되지 않았어요.';
@@ -220,7 +225,9 @@ function linkHref(raw, dir) {
   if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
   const [p] = href.split('#');
   if (!p) return null;
-  const path = normPath(dir, decodeURIComponent(p));
+  let decoded;
+  try { decoded = decodeURIComponent(p); } catch { return null; } // 잘못된 % 표기 하나가 문서 전체를 막지 않게 링크만 글자로 둔다
+  const path = normPath(dir, decoded);
   if (/^beans\/[^/]+\.md$/.test(path) && !NON_BEAN.has(path.slice(6))) return { url: `#/bean/${encodeURIComponent(path.slice(6))}` };
   if (/\.md$/.test(path) && state.tree?.files.some((f) => f.path === path)) return { url: `#/doc/${encodeURIComponent(path)}` };
   const { repo, branch } = cfg();
@@ -487,14 +494,20 @@ async function showBean(name) {
   const evidence = recipeEvidence(text);
   // 드리퍼 묶음(V60 · SOLO 등)과 그 안의 종류(V60 / V60 Switch, SOLO / SOLO SPIN). 묶음은 처음 나온 순서, 묶음 안은 종류 순서 → ICE 먼저.
   const choice = new Map(bean.recipes.map((r) => [r.id, dripperChoice(r, evidence[r.id]?.basis)]));
-  const families = [...new Set(bean.recipes.map((r) => choice.get(r.id).family))];
-  const variantsOf = (family) => [...new Set(bean.recipes.filter((r) => choice.get(r.id).family === family).map((r) => choice.get(r.id).variant))];
-  const groups = families.map((family) => {
-    const vs = variantsOf(family);
-    const items = bean.recipes.filter((r) => choice.get(r.id).family === family)
-      .sort((a, b) => vs.indexOf(choice.get(a.id).variant) - vs.indexOf(choice.get(b.id).variant) || (a.t === b.t ? 0 : a.t === 'ICE' ? -1 : 1));
-    return { family, items };
-  });
+  const byFamily = new Map(); // 묶음 → { variants: 종류(처음 나온 순서), items: 카드 }
+  for (const r of bean.recipes) {
+    const { family, variant } = choice.get(r.id);
+    if (!byFamily.has(family)) byFamily.set(family, { variants: [], items: [] });
+    const g = byFamily.get(family);
+    if (!g.variants.includes(variant)) g.variants.push(variant);
+    g.items.push(r);
+  }
+  for (const g of byFamily.values()) {
+    g.items.sort((a, b) => g.variants.indexOf(choice.get(a.id).variant) - g.variants.indexOf(choice.get(b.id).variant) || (a.t === b.t ? 0 : a.t === 'ICE' ? -1 : 1));
+  }
+  const families = [...byFamily.keys()];
+  const variantsOf = (family) => byFamily.get(family)?.variants || [];
+  const groups = families.map((family) => ({ family, items: byFamily.get(family).items }));
   const history = selectedBag(text, name);
   const age = history.errors.length ? null : bagAge(history.bag);
   const sale = saleStatus(text);
@@ -514,7 +527,7 @@ async function showBean(name) {
     </div>
     <p class="filter-result" id="recipeCount" aria-live="polite"></p>
     ${groups.map((g) => `<section class="qgroup" data-family="${esc(g.family)}">
-    <h4 class="qgroup-title">${esc(g.family)}</h4>
+    <div class="qgroup-title" role="heading" aria-level="3">${esc(g.family)}</div>
     <div class="qcards">${g.items.map((r) => `
       <div class="recipe-choice">
       <button type="button" class="qcard" data-id="${esc(r.id)}">
@@ -529,6 +542,7 @@ async function showBean(name) {
   const bodyText = history.start < 0 ? text : text.split(/\r?\n/).filter((_, k) => k < history.start || k >= history.end).join('\n');
   view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(compactSources(withoutHeaderNote(bodyText)), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
   if (history.start >= 0 && !history.errors.length) $('bagSelect').addEventListener('change', async (e) => {
+    if (seq !== screen) return; // 다른 화면으로 옮겨 가는 중이면 이 원두를 다시 그리지 않는다
     save(`bag:${cfg().repo}:${name}`, e.target.value);
     await showBean(name);
     if (seq === screen) $('bagSelect')?.focus();
@@ -543,12 +557,13 @@ async function showBean(name) {
       variant.innerHTML = vs.length < 2 ? '' : `<option value="">${esc(dripper.value)} 전체</option>${vs.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}`;
       variant.value = '';
     };
-    // 예전 형식(variant 키 없음)의 저장값은 드리퍼 이름 그대로였다. "V60"은 V60 Switch를 뺀 일반 V60만 뜻했으니 그 묶음의 그 종류로 옮긴다.
+    // 예전 형식(variant 키 없음)의 저장값은 카드의 드리퍼 표기(d)와 같은 카드만 보여 줬다. 같은 카드가 한 종류뿐이면 그 종류로, 여러 종류(SOLO와 SPIN)면 묶음 전체로 옮긴다. 이 원두에 없으면 전체로 되돌린다.
     const oldFormat = !!pref && typeof pref === 'object' && !('variant' in pref);
-    const old = oldFormat ? bean.recipes.find((r) => choice.get(r.id).variant === pref.dripper) : null;
-    dripper.value = old ? choice.get(old.id).family : families.includes(pref?.dripper) ? pref.dripper : '';
+    const oldHits = oldFormat ? bean.recipes.filter((r) => r.d === pref.dripper) : [];
+    const oldVariants = [...new Set(oldHits.map((r) => choice.get(r.id).variant))];
+    dripper.value = oldFormat ? (oldHits.length ? choice.get(oldHits[0].id).family : '') : families.includes(pref?.dripper) ? pref.dripper : '';
     fillVariants();
-    const wantVariant = old ? choice.get(old.id).variant : pref?.variant;
+    const wantVariant = oldFormat ? (oldVariants.length === 1 ? oldVariants[0] : '') : pref?.variant;
     if (dripper.value && variantsOf(dripper.value).length > 1 && variantsOf(dripper.value).includes(wantVariant)) variant.value = wantVariant;
     type.value = ['HOT', 'ICE'].includes(pref?.type) ? pref.type : '';
     const filter = () => {
@@ -680,7 +695,10 @@ function showSettings() {
     if (!token) { $('fmsg').innerHTML = '<p class="msg">토큰을 붙여 넣어 주세요.</p>'; return; }
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { $('fmsg').innerHTML = '<p class="msg">저장소는 <code>소유자/이름</code> 형식이에요.</p>'; return; }
     const prev = load('cfg', {});
-    save('cfg', { ...prev, token, repo });
+    if (!save('cfg', { ...prev, token, repo })) {
+      $('fmsg').innerHTML = '<p class="msg">이 기기에 설정을 저장하지 못했어요. 저장 공간이나 사생활 보호 모드를 확인해 주세요.</p>';
+      return;
+    }
     $('fmsg').innerHTML = '<p class="msg">연결하는 중…</p>';
     try {
       if (prev.repo && prev.repo !== repo) { drop('tree'); state.tree = null; }
@@ -882,17 +900,24 @@ function showAdd(target = '') {
   refresh.addEventListener('click', refreshRequests);
   refreshRequests();
   const msg = (html, ok) => { message.innerHTML = `<p class="msg${ok ? ' ok' : ''}">${html}</p>`; };
-  (async () => {
-    if (!state.tree) return;
+  // 기존 원두 목록. 목록 캐시 없이 열었다면 sync()가 목록을 받은 뒤 다시 불러 채운다(여러 번 불려도 옵션이 겹치지 않는다).
+  let filled = false;
+  const fillBeans = async () => {
+    if (!state.tree || !selectBean.isConnected) return;
     try {
       const rows = rowsOf(await readFile('beans/INDEX.md'));
+      const chosen = filled ? selectBean.value : target; // 주소로 받은 대상은 처음 채울 때만 고른다. 그 뒤에 사용자가 고른 "새 원두"(빈 값)는 그대로 둔다.
+      filled = true;
+      for (const o of selectBean.querySelectorAll('option[data-row]')) o.remove();
       selectBean.insertAdjacentHTML('beforeend', rows.map((r) => {
         const f = fileOf(r['파일'] || '');
-        return f ? `<option value="${esc(f)}">${esc(plain(`${r['로스터리'] || ''} · ${r['원두'] || ''}`))}</option>` : '';
+        return f ? `<option data-row="1" value="${esc(f)}">${esc(plain(`${r['로스터리'] || ''} · ${r['원두'] || ''}`))}</option>` : '';
       }).join(''));
-      selectBean.value = target;
+      selectBean.value = chosen;
     } catch { /* 목록 없이 새 원두만 */ }
-  })();
+  };
+  state.fillBeans = fillBeans;
+  fillBeans();
   const clearPreviews = () => {
     for (const img of thumbs.querySelectorAll('img')) URL.revokeObjectURL(img.src);
     thumbs.innerHTML = '';
@@ -974,7 +999,8 @@ function route() {
   screen++;
   const h = location.hash.replace(/^#\/?/, '');
   const [kind, ...rest] = h.split('/');
-  const arg = decodeURIComponent(rest.join('/'));
+  let arg;
+  try { arg = decodeURIComponent(rest.join('/')); } catch { arg = ''; } // 잘못된 주소는 목록으로 돌아간다
   if (kind === 'bean' && arg) return showBean(arg);
   if (kind === 'wish') return showWish();
   if (kind === 'docs') return showDocs();

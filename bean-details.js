@@ -1,6 +1,9 @@
 // 원두 화면 전용 메타데이터. QR 레시피 객체에는 넣지 않는다.
 import { splitRow, tablesIn, roastAge } from './brew-core.js';
 
+// SOLO SPIN(밸브) 레시피 제목의 대괄호 접두사. FORMAT.md의 "원두 파일 제목 규칙"과 같다.
+const SPIN_TAG = /^SPIN 밸브\s*·/;
+
 export function recipeEvidence(text) {
   const sources = [];
   const result = {};
@@ -17,7 +20,7 @@ export function recipeEvidence(text) {
     const heading = /^###\s+(\d+-\d+)\.\s+.*?·\s*(?:HOT|ICE)\b(.*)$/.exec(line);
     if (heading) {
       const basis = (heading[2].match(/\[(.*)\]/) || [])[1] || sectionBasis;
-      current = { label: /로스터리 권장 기반/.test(basis) ? '로스터리 권장 기반' : /기반:|일반 레시피 응용|^SPIN 밸브/.test(basis) ? '일반 레시피 응용' : '근거 구분 미기재', basis, reason: '', sources };
+      current = { label: /로스터리 권장 기반/.test(basis) ? '로스터리 권장 기반' : /기반:|일반 레시피 응용/.test(basis) || SPIN_TAG.test(basis) ? '일반 레시피 응용' : '근거 구분 미기재', basis, reason: '', sources };
       result[heading[1]] = current;
     }
     if (!current) continue;
@@ -34,7 +37,7 @@ export function dripperChoice(recipe, basis = '') {
   const d = String(recipe?.d || '');
   const isSolo = /^SOLO(\s|$)/.test(d);
   const family = /^V60(\s|$)/.test(d) ? 'V60' : isSolo ? 'SOLO' : d;
-  const variant = isSolo && /^SPIN 밸브/.test(basis || '') ? 'SOLO SPIN' : d;
+  const variant = isSolo && SPIN_TAG.test(basis || '') ? 'SOLO SPIN' : d;
   return { family, variant };
 }
 

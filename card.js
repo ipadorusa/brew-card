@@ -37,9 +37,20 @@ function b64urlBytes(s) {
   for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   return u;
 }
+// 주소 상한(620자)보다 한참 넉넉하게 잡은 한도. 이보다 크면 잘못되었거나 악의적으로 부풀린 주소로 보고 읽지 않는다.
+const MAX_PAYLOAD_CHARS = 4000, MAX_JSON_CHARS = 64 * 1024;
 async function decodePayload(p) {
-  const stream = new Blob([b64urlBytes(p)]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return JSON.parse(await new Response(stream).text());
+  if (p.length > MAX_PAYLOAD_CHARS) throw new Error('payload too long');
+  const reader = new Blob([b64urlBytes(p)]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const dec = new TextDecoder();
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += dec.decode(value, { stream: true });
+    if (text.length > MAX_JSON_CHARS) { await reader.cancel(); throw new Error('payload too large'); }
+  }
+  return JSON.parse(text + dec.decode());
 }
 const str = (v) => (v == null ? '' : String(v));
 
@@ -93,8 +104,8 @@ async function route() {
   try { c = cardOf(await decodePayload(h.slice(dot + 1))); }
   catch (e) { if (token === routeToken) showErr('카드를 읽지 못했어요. 주소가 잘렸을 수 있어요. QR을 다시 스캔해 주세요.'); return; }
   if (token !== routeToken) return;
-  saveRecent(h, c.o);
-  openCard(c, h);
+  try { saveRecent(h, c.o); openCard(c, h); }
+  catch (e) { showErr('카드를 열지 못했어요. 카드 내용이 잘못됐을 수 있어요. QR을 다시 스캔해 주세요.'); } // 형식이 틀린 값 때문에 화면이 비어 버리지 않게
 }
 function showErr(msg) { card = null; $('errMsg').textContent = msg; document.title = '브루 카드'; show('err'); }
 

@@ -110,14 +110,17 @@ function shortBeanName(h1, info, roaster) {
   return s.slice(0, LIMIT.b);
 }
 
+// 천 단위 쉼표("1,000g")는 숫자 한 덩어리로 읽는다. 쉼표를 두고 나머지만 읽으면 0이나 1이 된다.
+const noThousands = (s) => String(s).replace(/(\d),(?=\d{3}(?!\d))/g, '$1');
+
 function num(s) {
-  const m = /-?\d+(?:\.\d+)?/.exec(s);
+  const m = /-?\d+(?:\.\d+)?/.exec(noThousands(s));
   return m ? Number(m[0]) : null;
 }
 
 function parseWater(cell) {
   const out = {};
-  for (const seg of cell.split('+')) {
+  for (const seg of noThousands(cell).split('+')) {
     const g = /(\d+(?:\.\d+)?)\s*g/.exec(seg);
     if (!g) continue;
     const v = Number(g[1]);
