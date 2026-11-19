@@ -4,7 +4,7 @@
 
 import { tablesIn, splitRow, clean, parseBeanText, NON_BEAN, roastAge, saleStatus, zp6Of } from './brew-core.js';
 import { registerSW } from './pwa.js';
-import { recipeEvidence, bagHistory, bagAge } from './bean-details.js';
+import { recipeEvidence, bagHistory, bagAge, dripperChoice } from './bean-details.js';
 
 const KEY = 'coffee-lib:';
 const DEFAULT_REPO = 'ipadorusa/my-coffe-recipe';
@@ -485,6 +485,16 @@ async function showBean(name) {
   const bean = parseBeanText(text);
   const byId = new Map(bean.recipes.map((r) => [r.id, r]));
   const evidence = recipeEvidence(text);
+  // 드리퍼 묶음(V60 · SOLO 등)과 그 안의 종류(V60 / V60 Switch, SOLO / SOLO SPIN). 묶음은 처음 나온 순서, 묶음 안은 종류 순서 → ICE 먼저.
+  const choice = new Map(bean.recipes.map((r) => [r.id, dripperChoice(r, evidence[r.id]?.basis)]));
+  const families = [...new Set(bean.recipes.map((r) => choice.get(r.id).family))];
+  const variantsOf = (family) => [...new Set(bean.recipes.filter((r) => choice.get(r.id).family === family).map((r) => choice.get(r.id).variant))];
+  const groups = families.map((family) => {
+    const vs = variantsOf(family);
+    const items = bean.recipes.filter((r) => choice.get(r.id).family === family)
+      .sort((a, b) => vs.indexOf(choice.get(a.id).variant) - vs.indexOf(choice.get(b.id).variant) || (a.t === b.t ? 0 : a.t === 'ICE' ? -1 : 1));
+    return { family, items };
+  });
   const history = selectedBag(text, name);
   const age = history.errors.length ? null : bagAge(history.bag);
   const sale = saleStatus(text);
@@ -498,20 +508,24 @@ async function showBean(name) {
   const quick = bags + ageMsg + saleMsg + (bean.recipes.length ? `
     <div class="qhead"><h2>브루 카드</h2><span>눌러서 폰용 카드로 열어요</span></div>
     <div class="recipe-filters" role="group" aria-label="브루 카드 필터">
-      <label>드리퍼<select id="recipeDripper"><option value="">전체 드리퍼</option>${[...new Set(bean.recipes.map((r) => r.d))].map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('')}</select></label>
+      <label>드리퍼<select id="recipeDripper"><option value="">전체 드리퍼</option>${families.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select></label>
+      <label id="recipeVariantBox" hidden>종류<select id="recipeVariant"></select></label>
       <label>음료<select id="recipeType"><option value="">HOT · ICE 전체</option><option value="HOT">HOT</option><option value="ICE">ICE</option></select></label>
     </div>
     <p class="filter-result" id="recipeCount" aria-live="polite"></p>
-    <div class="qcards">${bean.recipes.map((r) => `
+    ${groups.map((g) => `<section class="qgroup" data-family="${esc(g.family)}">
+    <h4 class="qgroup-title">${esc(g.family)}</h4>
+    <div class="qcards">${g.items.map((r) => `
       <div class="recipe-choice">
       <button type="button" class="qcard" data-id="${esc(r.id)}">
         <span class="g">${esc(String(r.g))}g</span>
-        <span class="t">${esc(r.d)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
+        <span class="t">${esc(choice.get(r.id).variant)} <span class="badge ${r.t === 'ICE' ? 'ice' : 'hot'}">${esc(r.t)}</span>${r.id === bean.default ? ' <span class="badge ok">기본</span>' : ''}</span>
         <span class="s">${esc(r.id)} · ${esc(grind(r.c, r.z))} · ${esc(String(r.T))}℃${r.ra ? ' · ' + esc(r.ra) : ''}</span>
         <span class="evidence-label">${esc(evidence[r.id]?.label || '근거 구분 미기재')}</span>
       </button>
       <details class="recipe-evidence"><summary>근거 보기</summary>${md([evidence[r.id]?.basis || '레시피에 근거 구분이 적혀 있지 않아요.', evidence[r.id]?.reason || '', ...(evidence[r.id]?.sources || [])].join('\n\n'), 'beans')}</details>
-      </div>`).join('')}</div>` : '');
+      </div>`).join('')}</div>
+    </section>`).join('')}` : '');
   const bodyText = history.start < 0 ? text : text.split(/\r?\n/).filter((_, k) => k < history.start || k >= history.end).join('\n');
   view.innerHTML = `<a class="back" href="#/">← 원두</a><article class="doc">${mdSections(compactSources(withoutHeaderNote(bodyText)), 'beans', (h) => /^(\d+\.\s*)?(레시피|추출 기록)/.test(h), quick)}</article>`;
   if (history.start >= 0 && !history.errors.length) $('bagSelect').addEventListener('change', async (e) => {
@@ -520,25 +534,38 @@ async function showBean(name) {
     if (seq === screen) $('bagSelect')?.focus();
   });
   if (bean.recipes.length) {
-    const dripper = $('recipeDripper'), type = $('recipeType');
+    const dripper = $('recipeDripper'), variant = $('recipeVariant'), variantBox = $('recipeVariantBox'), type = $('recipeType');
     const pref = load('recipe-filter', {});
-    dripper.value = bean.recipes.some((r) => r.d === pref?.dripper) ? pref.dripper : '';
+    // 종류 칸은 고른 드리퍼 묶음에 종류가 둘 이상일 때만 보인다(V60 → V60 / V60 Switch, SOLO → SOLO / SOLO SPIN).
+    const fillVariants = () => {
+      const vs = dripper.value ? variantsOf(dripper.value) : [];
+      variantBox.hidden = vs.length < 2;
+      variant.innerHTML = vs.length < 2 ? '' : `<option value="">${esc(dripper.value)} 전체</option>${vs.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}`;
+      variant.value = '';
+    };
+    // 예전 형식(variant 키 없음)의 저장값은 드리퍼 이름 그대로였다. "V60"은 V60 Switch를 뺀 일반 V60만 뜻했으니 그 묶음의 그 종류로 옮긴다.
+    const oldFormat = !!pref && typeof pref === 'object' && !('variant' in pref);
+    const old = oldFormat ? bean.recipes.find((r) => choice.get(r.id).variant === pref.dripper) : null;
+    dripper.value = old ? choice.get(old.id).family : families.includes(pref?.dripper) ? pref.dripper : '';
+    fillVariants();
+    const wantVariant = old ? choice.get(old.id).variant : pref?.variant;
+    if (dripper.value && variantsOf(dripper.value).length > 1 && variantsOf(dripper.value).includes(wantVariant)) variant.value = wantVariant;
     type.value = ['HOT', 'ICE'].includes(pref?.type) ? pref.type : '';
     const filter = () => {
       let count = 0;
       for (const b of view.querySelectorAll('.qcard')) {
-        const r = byId.get(b.dataset.id);
-        b.hidden = !!((dripper.value && r.d !== dripper.value) || (type.value && r.t !== type.value));
-        const choice = b.closest('.recipe-choice');
-        if (choice) choice.hidden = b.hidden;
+        const r = byId.get(b.dataset.id), c = choice.get(r.id);
+        b.hidden = !!((dripper.value && c.family !== dripper.value) || (variant.value && c.variant !== variant.value) || (type.value && r.t !== type.value));
+        const wrap = b.closest('.recipe-choice');
+        if (wrap) wrap.hidden = b.hidden;
         if (!b.hidden) count++;
       }
+      for (const g of view.querySelectorAll('.qgroup')) g.hidden = ![...g.querySelectorAll('.qcard')].some((b) => !b.hidden);
       $('recipeCount').textContent = count ? `${bean.recipes.length}개 중 ${count}개를 보여줘요.` : '이 조건의 레시피가 없어요. 필터를 바꿔 주세요.';
     };
-    for (const input of [dripper, type]) input.addEventListener('change', () => {
-      save('recipe-filter', { dripper: dripper.value, type: type.value });
-      filter();
-    });
+    const remember = () => save('recipe-filter', { dripper: dripper.value, variant: variant.value, type: type.value });
+    dripper.addEventListener('change', () => { fillVariants(); remember(); filter(); });
+    for (const input of [variant, type]) input.addEventListener('change', () => { remember(); filter(); });
     filter();
   }
   for (const b of view.querySelectorAll('.qcard')) b.addEventListener('click', () => openCard(byId.get(b.dataset.id)));

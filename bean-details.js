@@ -17,7 +17,7 @@ export function recipeEvidence(text) {
     const heading = /^###\s+(\d+-\d+)\.\s+.*?·\s*(?:HOT|ICE)\b(.*)$/.exec(line);
     if (heading) {
       const basis = (heading[2].match(/\[(.*)\]/) || [])[1] || sectionBasis;
-      current = { label: /로스터리 권장 기반/.test(basis) ? '로스터리 권장 기반' : /기반:|일반 레시피 응용/.test(basis) ? '일반 레시피 응용' : '근거 구분 미기재', basis, reason: '', sources };
+      current = { label: /로스터리 권장 기반/.test(basis) ? '로스터리 권장 기반' : /기반:|일반 레시피 응용|^SPIN 밸브/.test(basis) ? '일반 레시피 응용' : '근거 구분 미기재', basis, reason: '', sources };
       result[heading[1]] = current;
     }
     if (!current) continue;
@@ -25,6 +25,17 @@ export function recipeEvidence(text) {
     if (reason) current.reason = reason[1];
   }
   return result;
+}
+
+// 브루 카드 고르기용: 드리퍼 묶음(family)과 그 안의 종류(variant).
+// V60 · V60 Switch · V60 네오 스위치는 "V60" 묶음, SOLO와 SPIN 밸브 레시피(제목 대괄호가 "SPIN 밸브 ·"로 시작)는 "SOLO" 묶음이다.
+// 카드 주소의 d(드리퍼 표기)는 그대로 두고 화면에서만 나눈다.
+export function dripperChoice(recipe, basis = '') {
+  const d = String(recipe?.d || '');
+  const isSolo = /^SOLO(\s|$)/.test(d);
+  const family = /^V60(\s|$)/.test(d) ? 'V60' : isSolo ? 'SOLO' : d;
+  const variant = isSolo && /^SPIN 밸브/.test(basis || '') ? 'SOLO SPIN' : d;
+  return { family, variant };
 }
 
 export function validDate(value) {
